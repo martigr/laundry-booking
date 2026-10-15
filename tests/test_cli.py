@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from laundry import create_app
 
 
@@ -26,3 +30,11 @@ def test_first_admin_from_config(tmp_path):
     with app.app_context():
         from laundry.users import get_user_by_username
         assert get_user_by_username('root')['is_admin'] == 1
+
+
+def test_unwritable_database_gives_clear_error(tmp_path, monkeypatch):
+    # Simulates a Docker volume owned by another UID (os.access is always True for root)
+    (tmp_path / 'laundry.db').touch()
+    monkeypatch.setattr(os, 'access', lambda path, mode: not str(path).endswith('laundry.db'))
+    with pytest.raises(RuntimeError, match='laundry.db is not writable for uid'):
+        create_app({'TESTING': True, 'DATABASE': str(tmp_path / 'laundry.db')})

@@ -10,15 +10,17 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY laundry/ ./laundry/
+COPY docker-entrypoint.sh /usr/local/bin/
 
-# Run as an unprivileged user; the database lives on a volume
-RUN useradd --system --uid 1000 app && mkdir /data && chown app /data
-USER app
+# The container starts as root only for the entrypoint, which fixes the owner of
+# /data and then runs the app as PUID:PGID (default 1000:1000). See README.
+RUN mkdir /data
 VOLUME /data
 
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')" || exit 1
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 # SQLite allows one writer at a time, so a few workers are plenty
 CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "laundry:create_app()"]

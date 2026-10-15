@@ -1,4 +1,5 @@
 """SQLite access: one connection per request, schema setup and settings."""
+import os
 import sqlite3
 
 from flask import current_app, g
@@ -52,6 +53,27 @@ def close_db(_exc=None):
     con = g.pop('db', None)
     if con is not None:
         con.close()
+
+
+def ensure_writable(path):
+    """Fail early with a clear message if SQLite can't write the database.
+
+    Typical cause: a Docker volume or host folder owned by a different UID than the app.
+    SQLite needs write access to the file and to its directory (journal/WAL files).
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    uid, gid = os.getuid(), os.getgid()
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(f'Cannot create the database directory {directory} as uid {uid}: {e.strerror}') from None
+    for p in [directory, path, path + '-wal', path + '-shm']:
+        if os.path.exists(p) and not os.access(p, os.W_OK):
+            raise RuntimeError(
+                f'{p} is not writable for uid {uid} (owned by uid {os.stat(p).st_uid}). '
+                f'SQLite needs write access to the database file and its directory. '
+                f'Fix the owner, e.g. chown -R {uid}:{gid} <folder>; in Docker see "Volumes and permissions" '
+                f'in the README.')
 
 
 def init_db():
