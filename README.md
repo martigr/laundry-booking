@@ -4,6 +4,22 @@ A small web app for booking the shared washing machine in an apartment building.
 Residents see a week calendar with three slots per day and book a free slot with one click.
 Whoever is first gets the slot; if something doesn't fit, people talk to each other.
 
+## Screenshots
+
+![Week view](docs/screenshots/week.png)
+
+<table>
+  <tr>
+    <td width="32%" valign="top"><img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub></td>
+    <td valign="top">
+      <img src="docs/screenshots/month.png" alt="Month overview"><br><sub>Month overview</sub><br><br>
+      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub>
+    </td>
+  </tr>
+</table>
+
+![Login](docs/screenshots/login.png)
+
 ## Features
 
 - Login per household (user with a free display name); "stay signed in" option

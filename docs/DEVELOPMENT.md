@@ -197,6 +197,9 @@ slot within the horizon and the user's upcoming bookings.
 - System font stack, no external requests (no CDNs, no Google Fonts).
 - Touch targets are at least 44 px; use real `<button>`/`<a>` elements and
   `aria-label` on icon-only buttons.
+- The README screenshots live in `docs/screenshots/` (desktop 1280 px wide, phone 390 px
+  at 2x). Retake them when the UI changes visibly, with demo data and a daytime clock so
+  the "running" slot is visible.
 
 ## Testing
 
