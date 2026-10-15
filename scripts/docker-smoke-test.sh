@@ -36,7 +36,7 @@ as_root() {  # run a command in a throwaway container as root with BIND_DIR at /
     docker run --rm --user 0:0 --entrypoint sh -v "$BIND_DIR":/x "$IMAGE" -c "$1"
 }
 
-echo "1) Named volume: starts, healthy, runs as uid 1000, CLI works"
+echo "1) Named volume: starts, healthy, runs as uid 1000, CLI and notifier work"
 NAME=smoke-named
 docker run -d --name "$NAME" -p 5101:5000 -v smoke-data:/data \
     -e SECRET_KEY=ci -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=secret123 "$IMAGE" >/dev/null
@@ -45,6 +45,8 @@ uid="$(docker exec "$NAME" stat -c %u /proc/1)"
 [ "$uid" = "1000" ] || fail "app runs as uid $uid, expected 1000"
 printf 'secret123\nsecret123\n' | docker exec -i --user 1000:1000 "$NAME" \
     flask --app laundry create-user smoke --name Smoke >/dev/null || fail "create-user via docker exec"
+docker exec --user 1000:1000 "$NAME" flask --app laundry send-notifications >/dev/null 2>&1 \
+    || fail "send-notifications via docker exec"
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5101/login)"
 [ "$code" = "200" ] || fail "/login returned $code"
 docker rm -f "$NAME" >/dev/null

@@ -1,10 +1,12 @@
 """Command line: flask --app laundry <command>."""
+import time
 from datetime import timedelta
 
 import click
+from flask import current_app
 from flask.cli import with_appcontext
 
-from . import slots
+from . import mail, notifications, slots
 from .db import get_db
 from .users import UserError, create_user, get_user_by_username
 
@@ -66,6 +68,26 @@ def seed_demo_command():
     click.echo('Demo-Benutzer: ' + ', '.join(f'{u} / {p}' for u, p, _, _ in DEMO_USERS))
 
 
+@click.command('send-notifications')
+@click.option('--loop', 'interval', type=int, default=0, metavar='SECONDS',
+              help='Immer wieder ausführen, alle SECONDS Sekunden (für einen eigenen Container).')
+@with_appcontext
+def send_notifications_command(interval):
+    """Erinnerungen einplanen und alle wartenden Mails verschicken."""
+    app = current_app._get_current_object()
+    if not mail.is_configured():
+        app.logger.warning('Mail is not configured (SMTP_HOST, MAIL_FROM); no notifications are sent.')
+    while True:
+        with app.app_context():  # fresh DB connection per run
+            sent, failed = notifications.run_once()
+        if sent or failed:
+            app.logger.info('Notifications: %d sent, %d failed', sent, failed)
+        if not interval:
+            break
+        time.sleep(interval)
+
+
 def init_app(app):
-    for command in (create_user_command, make_admin_command, seed_demo_command):
+    for command in (create_user_command, make_admin_command, seed_demo_command,
+                    send_notifications_command):
         app.cli.add_command(command)

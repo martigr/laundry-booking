@@ -1,4 +1,5 @@
 """User records, shared by the admin area, the CLI and the tests."""
+import re
 import sqlite3
 
 from werkzeug.security import generate_password_hash
@@ -7,13 +8,25 @@ from .db import get_db
 
 MIN_PASSWORD_LENGTH = 6
 MAX_NAME_LENGTH = 40
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 class UserError(ValueError):
     """Invalid input; the message is German and shown to the user."""
 
 
-def create_user(username, password, display_name=None, is_admin=False):
+def clean_email(email):
+    """Normalised address, None for empty input; raises UserError if it doesn't look like one."""
+    email = (email or '').strip()
+    if not email:
+        return None
+    if len(email) > 254 or not EMAIL_RE.match(email):
+        raise UserError(f'„{email}“ ist keine gültige E-Mail-Adresse.')
+    return email
+
+
+def create_user(username, password, display_name=None, is_admin=False, email=None):
+    email = clean_email(email)
     username = (username or '').strip().lower()
     display_name = (display_name or '').strip() or username
     if not username or len(username) > MAX_NAME_LENGTH or len(display_name) > MAX_NAME_LENGTH:
@@ -23,8 +36,8 @@ def create_user(username, password, display_name=None, is_admin=False):
     try:
         with get_db() as con:
             cur = con.execute(
-                'INSERT INTO users (username, password, display_name, is_admin) VALUES (?, ?, ?, ?)',
-                (username, generate_password_hash(password), display_name, int(is_admin)))
+                'INSERT INTO users (username, password, display_name, is_admin, email) VALUES (?, ?, ?, ?, ?)',
+                (username, generate_password_hash(password), display_name, int(is_admin), email))
     except sqlite3.IntegrityError:
         raise UserError(f'Der Benutzername „{username}“ ist schon vergeben.') from None
     return cur.lastrowid

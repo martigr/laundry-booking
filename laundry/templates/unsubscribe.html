@@ -1,0 +1,20 @@
+{% extends 'auth_base.html' %}
+{% block title %}Abbestellen – Waschküche{% endblock %}
+{% block form %}
+{% if done %}
+<div>
+  <h2>Abbestellt</h2>
+  <p class="hint" style="margin:6px 0 16px;font-size:15px">Du bekommst keine {{ label }} mehr. Im Profil kannst du sie jederzeit wieder einschalten.</p>
+  <a class="btn" href="{{ url_for('profile.index') }}">Zum Profil</a>
+</div>
+{% else %}
+<form class="login-form" method="post" style="max-width:none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <h2>Abbestellen</h2>
+    <p class="hint" style="margin:6px 0 0;font-size:15px">Keine {{ label }} mehr bekommen?</p>
+  </div>
+  <button type="submit" class="btn btn-primary" style="min-height:50px;font-size:16px">Ja, abbestellen</button>
+</form>
+{% endif %}
+{% endblock %}

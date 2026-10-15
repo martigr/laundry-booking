@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import slots
+from . import notifications, slots
 from .auth import login_required
 from .db import get_db
 from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bookable_day, parse_day, slot_bounds
@@ -205,6 +205,7 @@ def cancel(rid):
     else:
         with con:
             con.execute('DELETE FROM reservations WHERE id = ?', (rid,))
+            notifications.queue_freed_slot(con, rid, day, r['slot'], cancelled_by=g.user['id'])
         flash(f'Storniert: {fmt_day(day)} · {r["slot"]}', 'ok')
     return back_to_calendar()
 

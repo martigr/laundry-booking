@@ -1,0 +1,28 @@
+# Web app + notifier (sends reminder and other mails every minute). Settings come from .env,
+# see .env.example. Start with: docker compose up -d --build
+services:
+  web:
+    build: .
+    image: laundry-booking
+    env_file: .env
+    ports:
+      - "5000:5000"
+    volumes:
+      - laundry-data:/data
+    restart: unless-stopped
+
+  notifier:
+    build: .
+    image: laundry-booking
+    command: ["flask", "--app", "laundry", "send-notifications", "--loop", "60"]
+    env_file: .env
+    volumes:
+      - laundry-data:/data
+    restart: unless-stopped
+    depends_on:
+      - web
+    healthcheck:
+      disable: true  # no web server in this container
+
+volumes:
+  laundry-data:

@@ -1,0 +1,233 @@
+import smtplib
+import sqlite3
+from datetime import datetime
+
+import pytest
+
+from laundry import create_app, mail, notifications, slots
+
+REAL_DELIVER = mail.deliver  # captured before the mailbox fixture replaces it
+NOW = datetime(2026, 10, 15, 14, 20)
+
+
+def set_prefs(client, login, username, email, minutes=0, freed=False):
+    t = login(username)
+    data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'csrf_token': t}
+    if freed:
+        data['notify_freed'] = '1'
+    client.post('/profile', data=data)
+    return t
+
+
+def run(app):
+    with app.app_context():
+        return notifications.run_once()
+
+
+def at(monkeypatch, *args):
+    monkeypatch.setattr(slots, 'now', lambda: datetime(*args))
+
+
+def link_in(body, prefix):
+    return next(word for word in body.split() if word.startswith('https://wk.test' + prefix))[len('https://wk.test'):]
+
+
+def test_profile_settings(client, login, query):
+    set_prefs(client, login, 'bob', ' bob@example.ch ', 60, freed=True)
+    assert query("SELECT email, reminder_minutes, notify_freed FROM users WHERE username = 'bob'") == \
+        [('bob@example.ch', 60, 1)]
+
+    t = set_prefs(client, login, 'bob', 'kaputt', 30)
+    assert query("SELECT email, reminder_minutes FROM users WHERE username = 'bob'") == [('bob@example.ch', 60)]
+    r = client.post('/profile', data={'action': 'notifications', 'email': '', 'reminder_minutes': '7',
+                                      'csrf_token': t})
+    assert r.status_code == 400
+
+
+def test_reminder_is_sent_once_at_the_right_time(app, client, login, mailbox, monkeypatch):
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', 60)
+    client.post('/book', data={'day': '2026-10-15', 'slot': 'Abend', 'csrf_token': t})  # starts 17:00
+
+    run(app)                              # 14:20: too early
+    assert mailbox == []
+
+    at(monkeypatch, 2026, 10, 15, 16, 5)  # within the hour before
+    assert run(app) == (1, 0)
+    to, subject, body = mailbox[0]
+    assert to == 'bob@example.ch'
+    assert subject == 'Waschküche: heute Abend (17:00 – 22:00)'
+    assert 'https://wk.test/abbestellen/' in body
+
+    at(monkeypatch, 2026, 10, 15, 16, 30)
+    run(app)                              # no second mail
+    assert len(mailbox) == 1
+
+    at(monkeypatch, 2026, 10, 15, 17, 30)
+    run(app)
+    assert len(mailbox) == 1
+
+
+def test_reminder_needs_email_and_choice(app, client, login, mailbox, monkeypatch):
+    t = set_prefs(client, login, 'bob', '', 60)
+    client.post('/book', data={'day': '2026-10-15', 'slot': 'Abend', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 16, 5)
+    run(app)
+    assert mailbox == []
+
+
+def test_day_before_reminder(app, client, login, mailbox, monkeypatch):
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', 1440)
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Vormittag', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 7, 30)
+    run(app)
+    at(monkeypatch, 2026, 10, 15, 8, 0)
+    run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: morgen Vormittag (07:00 – 12:00)']
+
+
+def test_freed_slot_notifies_subscribers(app, client, login, mailbox, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', freed=True)
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+    client.post('/book', data={'day': '2026-11-05', 'slot': 'Abend', 'csrf_token': t})  # beyond 7 days
+    for rid, in query('SELECT id FROM reservations'):
+        client.post(f'/cancel/{rid}', data={'csrf_token': t})
+
+    run(app)
+    assert [(m[0], m[1]) for m in mailbox] == [('alice@example.ch', 'Waschküche: Fr 16. Okt. Abend ist frei')]
+    assert 'https://wk.test/?week=2026-10-16' in mailbox[0][2]
+
+
+def test_unsubscribe_link(app, client, login, mailbox, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', 60, freed=True)
+    t = login('bob')
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+    client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
+    run(app)
+    path = link_in(mailbox[0][2], '/abbestellen/')
+
+    other = app.test_client()  # works without being logged in
+    assert 'Ja, abbestellen' in other.get(path).get_data(as_text=True)
+    assert query("SELECT notify_freed FROM users WHERE username = 'alice'") == [(1,)]  # GET changes nothing
+    with other.session_transaction() as s:
+        s['csrf'] = 'x'
+    assert 'Abbestellt' in other.post(path, data={'csrf_token': 'x'}).get_data(as_text=True)
+    assert query("SELECT notify_freed, reminder_minutes FROM users WHERE username = 'alice'") == [(0, 60)]
+    assert other.get('/abbestellen/forged').status_code == 404
+
+
+def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
+    set_prefs(client, login, 'bob', 'Bob@Example.ch')
+    client.post('/logout', data={'csrf_token': csrf()})
+
+    for identifier in ['bob@example.ch', 'nobody']:
+        r = client.post('/passwort-vergessen', data={'identifier': identifier, 'csrf_token': csrf()},
+                        follow_redirects=True)
+        assert 'Falls zu diesem Konto' in r.get_data(as_text=True)
+    run(app)
+    assert [m[0] for m in mailbox] == ['Bob@Example.ch']
+    path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
+
+    assert client.get(path).status_code == 200
+    client.post(path, data={'password': 'brandnew1', 'csrf_token': csrf()})
+    login('bob', 'brandnew1')
+    assert client.get('/').status_code == 200
+    assert client.get(path).status_code == 400  # single use
+
+
+def test_password_reset_link_expires(app, client, csrf, login, mailbox, monkeypatch):
+    set_prefs(client, login, 'bob', 'bob@example.ch')
+    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+    run(app)
+    path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
+
+    import itsdangerous.timed
+    real = itsdangerous.timed.TimestampSigner.get_timestamp
+    monkeypatch.setattr(itsdangerous.timed.TimestampSigner, 'get_timestamp', lambda self: real(self) + 2 * 3600)
+    assert client.get(path).status_code == 400
+
+
+def test_failed_mail_is_retried(app, client, csrf, login, mailbox, monkeypatch, query):
+    set_prefs(client, login, 'bob', 'bob@example.ch')
+    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+
+    def broken(*args):
+        raise OSError('connection refused')
+    monkeypatch.setattr(mail, 'deliver', broken)
+    assert run(app) == (0, 1)
+    assert query('SELECT attempts, last_error, sent_at FROM notifications') == [(1, 'connection refused', None)]
+
+    monkeypatch.setattr(mail, 'deliver', lambda *a: mailbox.append(a))
+    assert run(app) == (1, 0)
+
+
+def test_without_mail_config_nothing_is_queued(tmp_path, monkeypatch):
+    monkeypatch.setattr(slots, 'now', lambda: NOW)
+    app = create_app({'TESTING': True, 'SECRET_KEY': 'test', 'DATABASE': str(tmp_path / 'x.db')})
+    client = app.test_client()
+    assert client.get('/passwort-vergessen').status_code == 404
+    assert 'Passwort vergessen' not in client.get('/login').get_data(as_text=True)
+    with app.app_context():
+        assert notifications.run_once() == (0, 0)
+    assert app.test_cli_runner().invoke(args=['send-notifications']).exit_code == 0
+
+
+def test_admin_creates_user_with_email(client, login, query):
+    t = login('alice')
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret123', 'email': 'carl@example.ch',
+                                      'csrf_token': t})
+    client.post('/admin/users', data={'username': 'dora', 'password': 'secret123', 'email': 'no-at-sign',
+                                      'csrf_token': t})
+    assert query("SELECT username, email FROM users WHERE username IN ('carl', 'dora')") == \
+        [('carl', 'carl@example.ch')]
+
+
+def test_columns_are_added_to_an_existing_database(tmp_path):
+    path = tmp_path / 'old.db'
+    con = sqlite3.connect(path)
+    con.execute("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
+                   password TEXT NOT NULL, display_name TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0)""")
+    con.execute("INSERT INTO users (username, password, display_name) VALUES ('bob', 'x', 'Bob')")
+    con.commit()
+    con.close()
+
+    create_app({'TESTING': True, 'DATABASE': str(path)})
+    create_app({'TESTING': True, 'DATABASE': str(path)})  # idempotent
+    con = sqlite3.connect(path)
+    assert con.execute('SELECT username, email, reminder_minutes, notify_freed FROM users').fetchall() == \
+        [('bob', None, 0, 0)]
+
+
+@pytest.mark.parametrize('security', ['starttls', 'ssl', 'none'])
+def test_deliver_uses_smtp_settings(app, monkeypatch, security):
+    calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, **kwargs):
+            calls.append(('connect', host, port))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def starttls(self, **kwargs):
+            calls.append(('starttls',))
+
+        def login(self, user, password):
+            calls.append(('login', user, password))
+
+        def send_message(self, msg):
+            calls.append(('send', msg['To'], msg['From'], msg['Subject']))
+
+    monkeypatch.setattr(smtplib, 'SMTP', FakeSMTP)
+    monkeypatch.setattr(smtplib, 'SMTP_SSL', FakeSMTP)
+    app.config.update(SMTP_HOST='mail.infomaniak.com', SMTP_PORT=587, SMTP_SECURITY=security,
+                      SMTP_USER='waschkueche@example.ch', SMTP_PASSWORD='pw')
+    with app.app_context():
+        REAL_DELIVER('bob@example.ch', 'Betreff', 'Text')
+    assert calls[0] == ('connect', 'mail.infomaniak.com', 587)
+    assert (('starttls',) in calls) == (security == 'starttls')
+    assert ('login', 'waschkueche@example.ch', 'pw') in calls
+    assert calls[-1] == ('send', 'bob@example.ch', 'Waschküche <waschkueche@example.ch>', 'Betreff')

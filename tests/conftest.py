@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from laundry import create_app, slots
+from laundry import create_app, mail, slots
 from laundry.db import get_db
 from laundry.users import create_user
 
@@ -12,10 +12,21 @@ NOW = datetime(2026, 10, 15, 14, 20)
 PASSWORD = 'secret123'
 
 
+MAIL_CONFIG = {'SMTP_HOST': 'smtp.test', 'MAIL_FROM': 'waschkueche@example.ch', 'BASE_URL': 'https://wk.test'}
+
+
 @pytest.fixture
-def app(tmp_path, monkeypatch):
+def mailbox(monkeypatch):
+    """Mails 'sent' during the test as (to, subject, body); nothing reaches a real server."""
+    sent = []
+    monkeypatch.setattr(mail, 'deliver', lambda to, subject, body: sent.append((to, subject, body)))
+    return sent
+
+
+@pytest.fixture
+def app(tmp_path, monkeypatch, mailbox):
     monkeypatch.setattr(slots, 'now', lambda: NOW)
-    app = create_app({'TESTING': True, 'SECRET_KEY': 'test', 'DATABASE': str(tmp_path / 'test.db')})
+    app = create_app({'TESTING': True, 'SECRET_KEY': 'test', 'DATABASE': str(tmp_path / 'test.db'), **MAIL_CONFIG})
     with app.app_context():
         create_user('alice', PASSWORD, 'Alice', is_admin=True)
         create_user('bob', PASSWORD, 'Bob')

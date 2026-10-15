@@ -35,8 +35,11 @@ flask --app laundry --debug run              # dev server on :5000
 - Put booking and permission rules in the view functions, not only in templates.
   Compute cell state in `bookings.build_cell()`, not in Jinja.
 - Values inside inline JS attributes: `|tojson` in a single-quoted attribute, never `|e`.
-- Schema lives in `db.SCHEMA`/`init_db()`. No migrations exist yet; once there is production data,
-  schema changes need an idempotent migration step in `init_db()` plus a test that builds the old schema.
+- Schema lives in `db.SCHEMA`/`init_db()`. New columns on existing tables go into `db.ADDED_COLUMNS`
+  (added on startup if missing); other changes need an idempotent step in `init_db()`; always with a
+  test that builds the old schema.
+- Mail only through the outbox: queue with the `notifications.queue_*()` functions (unique `dedupe_key`),
+  `flask send-notifications` sends. Never call `mail.deliver()` from a view. Tests use the `mailbox` fixture.
 - Keep it dependency-light: no ORM, no JS framework, no build step, no external CDNs or fonts.
   Dependencies are pinned in `requirements*.txt`.
 - `seed-demo` is for local demo data only; tests build their own state in fixtures.

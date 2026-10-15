@@ -22,6 +22,28 @@
 
   <form class="card" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="notifications">
+    <h2>Benachrichtigungen per E-Mail</h2>
+    {% if not mail_enabled %}<p class="hint" style="margin:0">Der Mailversand ist noch nicht eingerichtet. Deine Einstellungen werden gespeichert und gelten, sobald er läuft.</p>{% endif %}
+    <div class="field">
+      <label for="email">E-Mail-Adresse</label>
+      <input type="email" id="email" name="email" value="{{ g.user['email'] or '' }}" autocomplete="email" maxlength="254">
+      <span class="hint">Auch für „Passwort vergessen“. Leer lassen, wenn du keine Mails willst.</span>
+    </div>
+    <div class="field">
+      <label for="reminder_minutes">Erinnerung an meine Buchungen</label>
+      <select id="reminder_minutes" name="reminder_minutes">
+        {% for minutes, label in reminder_choices %}
+        <option value="{{ minutes }}"{{ ' selected' if g.user['reminder_minutes'] == minutes }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" name="notify_freed" value="1"{{ ' checked' if g.user['notify_freed'] }}>Mail, wenn in den nächsten 7 Tagen ein Slot frei wird</label>
+    <div><button type="submit" class="btn btn-dark">Speichern</button></div>
+  </form>
+
+  <form class="card" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="password">
     <h2>Passwort ändern</h2>
     <div class="field">
