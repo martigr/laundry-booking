@@ -1,17 +1,18 @@
+"""Creates demo users for local testing (run from the laundery folder: python seed.py)."""
 from werkzeug.security import generate_password_hash
-import sqlite3
 
-DB = "reservations.db"
+from app import db, init_db
 
-with sqlite3.connect(DB) as con:
-        # add apartments Whg 31.1 to Whg 31.5
-        for i in range(1, 6):
-            con.execute("INSERT INTO apartments (name) VALUES (?)",
-                        (f"Whg 31.{i}",))
+USERS = [
+    # username, password, display name, admin
+    ("alice", "password123", "Alice", 1),
+    ("bob", "password456", "Bob", 0),
+]
 
-with sqlite3.connect(DB) as con:
-        con.execute("INSERT INTO users (username, password, apartment_id) VALUES (?, ?, ?)",
-                    ("alice", generate_password_hash("password123"), "1"))
-        con.execute("INSERT INTO users (username, password, apartment_id) VALUES (?, ?, ?)",
-                    ("bob", generate_password_hash("password456"), "2"))
-        con.commit()
+init_db()
+with db() as con:
+    for username, password, name, is_admin in USERS:
+        con.execute(
+            "INSERT OR IGNORE INTO users (username, password, display_name, is_admin) VALUES (?, ?, ?, ?)",
+            (username, generate_password_hash(password), name, is_admin))
+print("Demo users: " + ", ".join(f"{u} / {p}" for u, p, _, _ in USERS))

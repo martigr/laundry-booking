@@ -1,141 +1,87 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=2">
-<title>Waschküche – Kalender</title>
-
-<style>
-body { font-family: sans-serif; padding: 1em; }
-.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.day { border: 1px solid #ccc; min-height: 120px; padding: 4px; }
-.header { font-weight: bold; text-align: center; padding: 8px 0; background: #f7f7f7; border: 1px solid #ccc; }
-.date { font-weight: bold; margin-bottom: 4px; cursor: pointer; }
-.slot { position: relative; }
-.free { background: #d4edda; cursor: pointer; margin: 2px 0; }
-.busy { background: #f8d7da; cursor: pointer; margin: 2px 0; }
-.busy-foreign { background: #f8d7da; margin: 2px 0; }
-.nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em; gap: 1em; }
-.nav a { margin: 0 8px; text-decoration: none; color: #007bff; }
-.nav a:hover { text-decoration: underline; }
-/* user controls */
-.user-pill { display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid #e1e8f0; padding:6px 8px; border-radius:20px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
-.avatar { width:28px; height:28px; border-radius:50%; background:#007bff; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:700; }
-.user-info { line-height:1; font-size:0.9em; color:#222; }
-.user-info small { display:block; color:#666; font-size:0.75em; }
-.btn-logout { margin-left:10px; background:#007bff; color:#fff; border:none; padding:0.7em; border-radius:4px; cursor:pointer; text-decoration:none; font-size:1em; }
-.btn-logout:hover { background:#0056b3; }
-/* ensure logout anchor color overrides .nav a default */
-.nav a.btn-logout { color: #fff; }
-.nav a.btn-logout:hover { color: #fff; text-decoration: none; }
-</style>
-
-<script>
-// store selected day and slots in JS
-window.selectedDay = null;
-window.selectedSlots = [];
-
-function selectSlot(day, slot) {
-    fetch('/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ day: day, slot: slot, apartment: '{{ user["apartment_id"] }}' })
-    }).then(function(res) {
-        if (res.ok) {
-            location.reload();
-        } else {
-            alert('Fehler beim Reservieren.');
-        }
-    }).catch(function() { alert('Netzwerkfehler beim Reservieren.'); });
-}
-
-function selectAllSlots(day) {
-    var slots = {{ slots|tojson }};
-    fetch('/', {        
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ day: day, slot: slots.join(','), apartment: '{{ user["apartment_id"] }}' })
-    }).then(function(res) {
-        if (res.ok) {
-            location.reload();
-        } else {
-            alert('Fehler beim Reservieren.');
-        }
-    }).catch(function() { alert('Netzwerkfehler beim Reservieren.'); });
-}
-
-function deleteSlot(id) {
-    fetch('/delete/' + id, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }).then(function(res) {
-        if (res.ok) {
-            location.reload();
-        } else {
-            alert('Fehler beim Löschen.');
-        }
-    }).catch(function() { alert('Netzwerkfehler beim Löschen.'); });
-}
-</script>
-</head>
-
-<body>
-
-<h2>🧺 {{ current.strftime("%B %Y") }}</h2>
-
-<div class="nav">
-    <div>
-        <a href="/?month={{ prev_month }}">⬅️</a>
-        <a href="/?month={{ next_month }}">➡️</a>
+{% extends 'base.html' %}
+{% from '_macros.html' import slot_cell %}
+{% block title %}Kalender – Waschküche{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="kicker">{{ kicker }}</div>
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="toolbar">
+    <div class="segmented" role="group" aria-label="Ansicht">
+      <a href="{{ url_for('index', week=this_week) }}" class="active" aria-current="page">Woche</a>
+      <a href="{{ url_for('month', month=month_param) }}">Monat</a>
     </div>
-    <div>
-        <a class="user-pill" href="/profile" title="Profile">
-            <span class="avatar">{{ user['username'][0]|upper }}</span>
-            <span class="user-info"><strong>{{ user['username'] }}</strong><small>{{ user['apartment_name'] }}</small></span>
-        </a>
-        <a class="btn-logout" href="/logout">Logout</a>
-    </div>
+    <a class="btn btn-icon" href="{{ url_for('index', week=prev_week) }}" aria-label="Vorherige Woche">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <a class="btn" href="{{ url_for('index') }}">Heute</a>
+    <a class="btn btn-icon" href="{{ url_for('index', week=next_week) }}" aria-label="Nächste Woche">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+  </div>
 </div>
 
-<div class="calendar">
-    <div class="header" title="Montag">Mo</div>
-    <div class="header" title="Dienstag">Di</div>
-    <div class="header" title="Mittwoch">Mi</div>
-    <div class="header" title="Donnerstag">Do</div>
-    <div class="header" title="Freitag">Fr</div>
-    <div class="header" title="Samstag">Sa</div>
-    <div class="header" title="Sonntag">So</div>
+<div class="split">
+  <section class="split-main" aria-label="Wochenkalender">
+    <div class="legend">
+      <span><span class="swatch free"></span>Frei</span>
+      <span><span class="swatch mine"></span>Deine Buchung</span>
+      <span><span class="swatch taken"></span>Belegt</span>
+    </div>
+    <div class="week">
+      {% for d in days %}
+      <div class="day{{ ' is-today' if d.is_today }}{{ ' is-past' if d.is_past }}">
+        <div class="day-head" title="{{ d.wd_long }}">
+          <div class="wd">{{ d.wd }}</div>
+          <div class="num">{{ d.date.day }}</div>
+          <div class="tag">{{ 'HEUTE' if d.is_today }}</div>
+        </div>
+        {% for c in d.cells %}{{ slot_cell(c) }}{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
 
-    {% for _ in range(first_weekday) %}
-    <div></div>
-    {% endfor %}
+  <aside class="split-side">
+    <div class="card now-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="label">Jetzt in der Waschküche</span>
+        {% if running %}<span class="status busy"><span class="dot"></span>Belegt</span>
+        {% else %}<span class="status free"><span class="dot"></span>Frei</span>{% endif %}
+      </div>
+      {% if running %}
+      <div class="who">{{ 'Du' if running.mine else running.res['display_name'] }}</div>
+      <div class="meta">{{ running.res['slot'] }} · bis {{ running.end.strftime('%H:%M') }}</div>
+      <div class="bar"><div style="width: {{ running.progress }}%"></div></div>
+      {% else %}
+      <div class="who">Niemand gebucht</div>
+      {% endif %}
+      {% if next_free %}
+      <div class="meta">Nächster freier Slot: <a href="{{ url_for('index', week=next_free.week) }}"><strong>{{ next_free.label }}, {{ next_free.slot }}</strong></a></div>
+      {% endif %}
+    </div>
 
-    {% for d in range(1, days_in_month + 1) %}
-    {% set day = "%04d-%02d-%02d"|format(current.year, current.month, d) %}
-    <div class="day">
-        <div class="date" onclick="selectAllSlots('{{ day }}')">{{ d }}</div>
-
-        {% for s in slots %}
-            {% set cell = grid.get(day, {}).get(s) %}
-            {% if cell %}
-                {% if cell.apartment_id == user['apartment_id'] %}
-                <div class="slot busy" data-id="{{ cell.id }}" data-apartment="{{ cell.apartment_id }}" data-day="{{ day }}" data-slot="{{ s }}" onclick="deleteSlot({{ cell.id }})">
-                    <span class="slot-label">🔴 {{ cell.apartment_name }}</span>
-                </div>
-                {% else %}
-                <div class="slot busy-foreign" data-id="{{ cell.id }}" data-apartment="{{ cell.apartment_id }}" data-day="{{ day }}" data-slot="{{ s }}">
-                    <span class="slot-label">🔴 {{ cell.apartment_name }}</span>
-                </div>
-                {% endif %}
-            {% else %}
-                <div class="slot free" data-day="{{ day }}" data-slot="{{ s }}"
-                    onclick="selectSlot('{{ day }}','{{ s }}')">
-                    🟢 {{ s }}
-                </div>
-            {% endif %}
+    <div class="card">
+      <h2>Deine nächsten Buchungen</h2>
+      {% if upcoming %}
+      <ul class="upcoming">
+        {% for u in upcoming %}
+        <li>
+          <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
+          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.slot }} · {{ u.slot|slot_time }}</span></div>
+          <form method="post" action="{{ url_for('cancel', rid=u.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.slot }} stornieren">Stornieren</button>
+          </form>
+        </li>
         {% endfor %}
+      </ul>
+      {% else %}
+      <p class="hint" style="margin:0">Keine anstehenden Buchungen. Klicke im Kalender auf einen freien Slot.</p>
+      {% endif %}
     </div>
-    {% endfor %}
+  </aside>
 </div>
-
-</body>
-</html>
+{% endblock %}

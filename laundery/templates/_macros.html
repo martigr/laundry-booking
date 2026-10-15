@@ -1,0 +1,27 @@
+{% macro slot_cell(c) -%}
+{%- set who = 'Du' if c.mine else (c.res['display_name'] if c.res else ('Vorbei' if c.state == 'past' else ('Noch nicht buchbar' if c.state == 'locked' else 'Frei'))) -%}
+{%- set classes = 'slot ' ~ c.state ~ (' past' if c.past and c.res else '') ~ (' running' if c.running and c.res else '') ~ (' cancelable' if c.cancelable else '') -%}
+{%- set inner -%}
+  <span class="s-name">{{ c.slot }}</span>
+  <span class="s-who">{{ who }}</span>
+  <span class="s-meta">{% if c.running and c.res %}Läuft gerade{% else %}<span class="t-long">{{ c.time }}</span><span class="t-short">{{ c.short }}</span>{% endif %}</span>
+  {% if c.cancelable %}<span class="s-hover">Stornieren</span>{% endif %}
+{%- endset -%}
+{%- if c.bookable -%}
+<form method="post" action="{{ url_for('book') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="day" value="{{ c.day }}">
+  <input type="hidden" name="slot" value="{{ c.slot }}">
+  <input type="hidden" name="next" value="{{ request.full_path }}">
+  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} buchen">{{ inner }}</button>
+</form>
+{%- elif c.cancelable -%}
+<form method="post" action="{{ url_for('cancel', rid=c.res['id']) }}"{% if not c.mine %} onsubmit='return confirm({{ ("Buchung von " ~ c.res["display_name"] ~ " stornieren?")|tojson }})'{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ request.full_path }}">
+  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}) stornieren">{{ inner }}</button>
+</form>
+{%- else -%}
+<div class="{{ classes }}">{{ inner }}</div>
+{%- endif -%}
+{%- endmacro %}
