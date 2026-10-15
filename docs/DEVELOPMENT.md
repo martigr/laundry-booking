@@ -45,6 +45,7 @@ tests/
 ├── test_bookings.py      # booking rules, cancel permissions, views, escaping
 ├── test_admin.py         # admin area
 └── test_cli.py           # CLI commands, first-admin bootstrap
+docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
@@ -186,7 +187,11 @@ slot within the horizon and the user's upcoming bookings.
   `onsubmit` confirm texts) use `|tojson` in a *single-quoted* attribute; `|e` is not
   safe there. `test_display_name_is_escaped` covers this.
 - **Passwords:** werkzeug hashes, minimum length `users.MIN_PASSWORD_LENGTH`.
-- **Container:** runs as an unprivileged user.
+- **Container:** `docker-entrypoint.sh` starts as root only to `chown` the data folder and the
+  `laundry.db*` files to `PUID:PGID` (default 1000), then `exec setpriv` drops to that user
+  before the app starts. With `--user` it skips the `chown`. `db.ensure_writable()` checks at
+  startup that the database file and folder are writable and fails with a message naming the
+  path, owner and fix, instead of SQLite's "unable to open database file".
 
 ## Frontend
 

@@ -63,11 +63,29 @@ docker run -d --name laundry -p 5000:5000 \
   laundry-booking
 ```
 
-- The container runs Gunicorn as an unprivileged user; the database lives in the `/data` volume.
+- The app runs as an unprivileged user (UID/GID 1000 by default); the database lives in `/data`.
 - `ADMIN_USERNAME`/`ADMIN_PASSWORD` create the first admin when the database has no users yet.
   Afterwards the admin creates all other users in the app under *Verwaltung*.
 - Serve it behind HTTPS (reverse proxy) and set `SESSION_COOKIE_SECURE=1`.
 - `/health` is used by the Docker health check.
+
+### Volumes and permissions
+
+SQLite needs write access to the database file **and** its folder. The container starts as
+root only long enough to give `/data` to the app user, then drops to that user:
+
+| Setup | What happens |
+|---|---|
+| Named volume (`-v laundry-data:/data`) | Works as is. |
+| Host folder (`-v /srv/laundry:/data`) | The entrypoint changes the owner of the folder and the `laundry.db*` files to `PUID:PGID`. Set `-e PUID=$(id -u) -e PGID=$(id -g)` so they stay owned by your host user (handy for backups). |
+| `docker run --user 1234:1234` | No owner change (no root). The folder must already be writable for that UID: `sudo chown 1234:1234 /srv/laundry`. |
+
+If the folder is not writable, the app stops at startup and names the path, the owner and the
+`chown` command to fix it.
+
+Run CLI commands as the app user, otherwise root may create database files the app can't write:
+`docker exec -it --user 1000:1000 laundry flask --app laundry create-user ...` (use your `PUID:PGID`).
+A restart fixes the ownership again.
 
 Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"` with the same environment variables.
 
@@ -81,6 +99,7 @@ Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | First admin on an empty database |
 | `SESSION_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS |
 | `LOG_LEVEL` | `INFO` | Log level |
+| `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
 
 ## Command line
 
@@ -90,7 +109,7 @@ flask --app laundry make-admin <username>
 flask --app laundry seed-demo                                                  # demo data, development only
 ```
 
-In Docker: `docker exec -it laundry flask --app laundry create-user ...`
+In Docker: `docker exec -it --user 1000:1000 laundry flask --app laundry create-user ...` (see *Volumes and permissions*)
 
 ## Development
 

@@ -30,9 +30,9 @@ def create_app(test_config=None):
         app.config['SECRET_KEY'] = 'dev-only-secret'
         app.logger.warning('Using the development SECRET_KEY')
 
-    os.makedirs(os.path.dirname(os.path.abspath(app.config['DATABASE'])), exist_ok=True)
-
     from . import admin, auth, bookings, cli, db, profile
+
+    db.ensure_writable(app.config['DATABASE'])
 
     db.init_app(app)
     auth.init_app(app)
