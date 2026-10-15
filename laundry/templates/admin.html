@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Verwaltung – Waschküche{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="kicker">Nur für Admins</div>
+    <h1>Verwaltung</h1>
+  </div>
+</div>
+
+<div class="split">
+  <section class="card split-main" aria-labelledby="users-h">
+    <h2 id="users-h">Benutzer</h2>
+    <div class="table-wrap">
+      <table style="min-width:560px">
+        <thead>
+          <tr><th>Anzeigename</th><th>Benutzername</th><th>Rolle</th><th style="text-align:right">Aktionen</th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td><strong>{{ u['display_name'] }}</strong></td>
+            <td>{{ u['username'] }}</td>
+            <td>{% if u['is_admin'] %}<span class="badge admin">Admin</span>{% else %}<span class="badge">Bewohner</span>{% endif %}</td>
+            <td class="actions">
+              {% if u['id'] == g.user['id'] %}
+              <span class="hint">Du</span>
+              {% else %}
+              <form method="post" action="{{ url_for('admin_reset_password', uid=u['id']) }}" onsubmit='return confirm({{ ("Neues Passwort für " ~ u["display_name"] ~ " erzeugen?")|tojson }})'>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="linklike">Passwort zurücksetzen</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_delete_user', uid=u['id']) }}" onsubmit='return confirm({{ (u["display_name"] ~ " und alle Buchungen löschen?")|tojson }})'>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="linklike danger">Löschen</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form class="inline-form" method="post" action="{{ url_for('admin_create_user') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="display_name">Anzeigename</label>
+        <input type="text" id="display_name" name="display_name" placeholder="z. B. Müller 2. OG" maxlength="40">
+      </div>
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" maxlength="40" autocapitalize="none" required>
+      </div>
+      <div class="field">
+        <label for="password">Startpasswort</label>
+        <input type="text" id="password" name="password" minlength="{{ min_pw }}" autocomplete="off" required>
+      </div>
+      <label class="check"><input type="checkbox" name="is_admin" value="1">Admin</label>
+      <button type="submit" class="btn btn-primary">Benutzer anlegen</button>
+    </form>
+  </section>
+
+  <form class="card split-side" method="post" action="{{ url_for('admin_settings') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2>Einstellungen</h2>
+    <div class="field">
+      <label for="horizon_weeks">Buchbar im Voraus (Wochen)</label>
+      <input type="number" id="horizon_weeks" name="horizon_weeks" min="1" max="52" value="{{ horizon_weeks }}" required>
+    </div>
+    <button type="submit" class="btn btn-dark">Speichern</button>
+  </form>
+</div>
+{% endblock %}

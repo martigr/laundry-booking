@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} – Waschküche{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="kicker">Monatsübersicht</div>
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="toolbar">
+    <div class="segmented" role="group" aria-label="Ansicht">
+      <a href="{{ url_for('index', week=week_param) }}">Woche</a>
+      <a href="{{ url_for('month', month=this_month) }}" class="active" aria-current="page">Monat</a>
+    </div>
+    <a class="btn btn-icon" href="{{ url_for('month', month=prev_month) }}" aria-label="Vorheriger Monat">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <a class="btn" href="{{ url_for('month', month=this_month) }}">Heute</a>
+    <a class="btn btn-icon" href="{{ url_for('month', month=next_month) }}" aria-label="Nächster Monat">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+  </div>
+</div>
+
+<div class="legend">
+  <span><span class="swatch free"></span>Frei</span>
+  <span><span class="swatch mine"></span>Deine Buchung</span>
+  <span><span class="swatch taken"></span>Belegt</span>
+  <span class="hint">Tag anklicken, um in der Woche zu buchen.</span>
+</div>
+
+<div class="month">
+  {% for wd in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] %}<div class="wdh">{{ wd }}</div>{% endfor %}
+  {% for _ in range(leading) %}<div></div>{% endfor %}
+  {% for d in days %}
+  <a class="mday{{ ' is-today' if d.is_today }}{{ ' is-past' if d.is_past }}" href="{{ url_for('index', week=d.date.isoformat()) }}">
+    <span class="num">{{ d.date.day }}</span>
+    <span class="pills">
+      {% for c in d.cells %}
+      <span class="pill {{ c.state }}" title="{{ c.slot }}: {{ 'Du' if c.mine else (c.res['display_name'] if c.res else 'frei') }}">{{ 'Du' if c.mine else (c.res['display_name'] if c.res else c.slot) }}</span>
+      {% endfor %}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

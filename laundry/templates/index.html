@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import slot_cell %}
+{% block title %}Kalender – Waschküche{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="kicker">{{ kicker }}</div>
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="toolbar">
+    <div class="segmented" role="group" aria-label="Ansicht">
+      <a href="{{ url_for('index', week=this_week) }}" class="active" aria-current="page">Woche</a>
+      <a href="{{ url_for('month', month=month_param) }}">Monat</a>
+    </div>
+    <a class="btn btn-icon" href="{{ url_for('index', week=prev_week) }}" aria-label="Vorherige Woche">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <a class="btn" href="{{ url_for('index') }}">Heute</a>
+    <a class="btn btn-icon" href="{{ url_for('index', week=next_week) }}" aria-label="Nächste Woche">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+  </div>
+</div>
+
+<div class="split">
+  <section class="split-main" aria-label="Wochenkalender">
+    <div class="legend">
+      <span><span class="swatch free"></span>Frei</span>
+      <span><span class="swatch mine"></span>Deine Buchung</span>
+      <span><span class="swatch taken"></span>Belegt</span>
+    </div>
+    <div class="week">
+      {% for d in days %}
+      <div class="day{{ ' is-today' if d.is_today }}{{ ' is-past' if d.is_past }}">
+        <div class="day-head" title="{{ d.wd_long }}">
+          <div class="wd">{{ d.wd }}</div>
+          <div class="num">{{ d.date.day }}</div>
+          <div class="tag">{{ 'HEUTE' if d.is_today }}</div>
+        </div>
+        {% for c in d.cells %}{{ slot_cell(c) }}{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="split-side">
+    <div class="card now-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="label">Jetzt in der Waschküche</span>
+        {% if running %}<span class="status busy"><span class="dot"></span>Belegt</span>
+        {% else %}<span class="status free"><span class="dot"></span>Frei</span>{% endif %}
+      </div>
+      {% if running %}
+      <div class="who">{{ 'Du' if running.mine else running.res['display_name'] }}</div>
+      <div class="meta">{{ running.res['slot'] }} · bis {{ running.end.strftime('%H:%M') }}</div>
+      <div class="bar"><div style="width: {{ running.progress }}%"></div></div>
+      {% else %}
+      <div class="who">Niemand gebucht</div>
+      {% endif %}
+      {% if next_free %}
+      <div class="meta">Nächster freier Slot: <a href="{{ url_for('index', week=next_free.week) }}"><strong>{{ next_free.label }}, {{ next_free.slot }}</strong></a></div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Deine nächsten Buchungen</h2>
+      {% if upcoming %}
+      <ul class="upcoming">
+        {% for u in upcoming %}
+        <li>
+          <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
+          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.slot }} · {{ u.slot|slot_time }}</span></div>
+          <form method="post" action="{{ url_for('cancel', rid=u.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.slot }} stornieren">Stornieren</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="hint" style="margin:0">Keine anstehenden Buchungen. Klicke im Kalender auf einen freien Slot.</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Anmelden – Waschküche{% endblock %}
+{% block body %}
+<div class="login">
+  <section class="login-hero">
+    <div class="brand" style="color:#fff">
+      <span class="brand-mark">{% include '_logo.html' %}</span>
+      <span class="brand-name">Waschküche</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <h1>Waschtag planen,<br>ohne Zettel an der Tür.</h1>
+      <p class="hero-extra">Sieh auf einen Blick, wann die Waschmaschine frei ist, und trag dich mit einem Klick ein. Passt es mal nicht, redet man miteinander.</p>
+    </div>
+    <div class="hero-extra" style="font-size:13px;color:#9AA6B2">Noch kein Konto? Der Admin im Haus legt es für dich an.</div>
+  </section>
+  <section class="login-main">
+    <form class="login-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <h2>Anmelden</h2>
+        <p class="hint" style="margin:6px 0 0;font-size:15px">Mit deinem Benutzerkonto.</p>
+      </div>
+      {% if error %}<div class="flash flash-warn" role="alert">{{ error }}</div>{% endif %}
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">Passwort</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <label class="check"><input type="checkbox" name="remember" value="1" checked>Angemeldet bleiben</label>
+      <button type="submit" class="btn btn-primary" style="min-height:50px;font-size:16px">Anmelden</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

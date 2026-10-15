@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Waschküche{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231D5FD1'/%3E%3Ccircle cx='12' cy='13' r='5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body>
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="brand-mark">{% include '_logo.html' %}</span>
+      <span class="brand-name">Waschküche</span>
+    </a>
+    <nav class="mainnav" aria-label="Hauptnavigation">
+      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint in ('index', 'month') }}">Kalender</a>
+      {% if g.user['is_admin'] %}
+      <a href="{{ url_for('admin') }}" class="{{ 'active' if request.endpoint == 'admin' }}">Verwaltung</a>
+      {% endif %}
+    </nav>
+    <div class="userbox">
+      <a class="user-pill" href="{{ url_for('profile') }}" title="Profil">
+        <span class="avatar">{{ g.user['display_name'][:1]|upper }}</span>
+        <span class="user-text"><strong>{{ g.user['display_name'] }}</strong><small>{{ 'Admin' if g.user['is_admin'] else 'Profil' }}</small></span>
+      </a>
+      <a class="btn btn-small" href="{{ url_for('logout') }}">Abmelden</a>
+    </div>
+  </div>
+</header>
+<main class="page">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+  <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
+  {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+{% endblock %}
+</body>
+</html>
