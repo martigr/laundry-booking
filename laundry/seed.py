@@ -1,4 +1,4 @@
-"""Creates demo users for local testing (run from the laundery folder: python seed.py)."""
+"""Creates demo users for local testing (run from the laundry folder: python seed.py)."""
 from werkzeug.security import generate_password_hash
 
 from app import db, init_db

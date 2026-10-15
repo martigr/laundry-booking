@@ -10,7 +10,7 @@ Residents log in, see a week (or month) calendar with three slots per day
 and book a free slot with one click. There are no quotas: first come, first
 served. Admins manage users and the booking horizon.
 
-- **Backend:** one module, `laundery/app.py` (Flask, SQLite, no ORM)
+- **Backend:** one module, `laundry/app.py` (Flask, SQLite, no ORM)
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only `confirm()` dialogs)
 - **UI language:** German. Code, comments, commit messages and docs: English.
@@ -18,8 +18,7 @@ served. Admins manage users and the booking horizon.
 ## Project layout
 
 ```
-laundery/                 # app root (folder name is a historical typo, keep it:
-│                         #  Dockerfile and docs depend on it)
+laundry/                  # app root (run app.py and seed.py from here)
 ├── app.py                # config, DB schema, auth, routes, CLI
 ├── seed.py               # demo users for local testing
 ├── static/style.css      # all styles (design tokens as CSS variables)
@@ -33,7 +32,7 @@ laundery/                 # app root (folder name is a historical typo, keep it:
     ├── profile.html      # display name, password
     └── admin.html        # users, settings
 tests/
-├── conftest.py           # puts laundery/ on sys.path, temp DATABASE
+├── conftest.py           # puts laundry/ on sys.path, temp DATABASE
 └── test_app.py           # pytest suite (Flask test client)
 docs/DEVELOPMENT.md       # this file
 ```
@@ -43,7 +42,7 @@ docs/DEVELOPMENT.md       # this file
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-cd laundery
+cd laundry
 python seed.py            # demo users: alice / password123 (admin), bob / password456
 python app.py             # http://localhost:5000
 ```
@@ -178,7 +177,7 @@ slot within the horizon and the user's upcoming bookings.
 ## CLI
 
 ```bash
-cd laundery
+cd laundry
 flask --app app create-user <username> [--name "Display name"] [--admin]
 flask --app app make-admin <username>
 ```

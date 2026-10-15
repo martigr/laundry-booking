@@ -9,16 +9,15 @@ changing the data model, booking rules or security code.
 ```bash
 pip install -r requirements-dev.txt   # setup (use a venv)
 pytest                                # run tests from repo root; must pass before committing
-cd laundery && python seed.py         # demo users alice/password123 (admin), bob/password456
-cd laundery && python app.py          # dev server on :5000
+cd laundry && python seed.py         # demo users alice/password123 (admin), bob/password456
+cd laundry && python app.py          # dev server on :5000
 ```
 
 ## Layout
 
-- `laundery/app.py`: the whole backend (config, DB schema, auth, CSRF, routes, CLI).
-  The folder name `laundery` is a known typo. Don't rename it.
-- `laundery/templates/`: Jinja templates extending `base.html`; slot rendering in `_macros.html`.
-- `laundery/static/style.css`: all styling; colours are CSS variables in `:root`.
+- `laundry/app.py`: the whole backend (config, DB schema, auth, CSRF, routes, CLI).
+- `laundry/templates/`: Jinja templates extending `base.html`; slot rendering in `_macros.html`.
+- `laundry/static/style.css`: all styling; colours are CSS variables in `:root`.
 - `tests/test_app.py`: pytest suite with fixed time and temp DB.
 
 ## Rules

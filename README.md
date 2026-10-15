@@ -29,11 +29,11 @@ A Flask-based web application for managing shared laundry room reservations in a
 
 ## Running Locally (Development)
 
-Use the built-in Flask server only for development. From the `laundery` folder:
+Use the built-in Flask server only for development. From the `laundry` folder:
 
 ```bash
 # set FLASK_APP if needed and run for development
-cd laundery
+cd laundry
 python app.py
 ```
 
@@ -46,7 +46,7 @@ Run a production WSGI server on your machine. Example (Unix):
 ```bash
 # using Gunicorn
 pip install -r requirements.txt
-cd laundery
+cd laundry
 gunicorn -w 4 -b 0.0.0.0:5000 app:app
 ```
 
@@ -58,9 +58,9 @@ Set a safe secret and run Gunicorn inside the container:
 
 ```bash
 # build
-docker build -t laundery-booking .
+docker build -t laundry-booking .
 # run (replace SECRET_KEY and optionally DATABASE)
-docker run -e SECRET_KEY='a-very-long-random-secret' -p 5000:5000 laundery-booking
+docker run -e SECRET_KEY='a-very-long-random-secret' -p 5000:5000 laundry-booking
 ```
 
 Notes:
@@ -77,7 +77,7 @@ The app uses SQLite with automatic schema initialization. The database file (`la
 To give an existing user admin rights:
 
 ```bash
-cd laundery
+cd laundry
 flask --app app make-admin <username>
 ```
 
@@ -86,7 +86,7 @@ flask --app app make-admin <username>
 Admins create users in the app under *Verwaltung*. From the command line:
 
 ```bash
-cd laundery
+cd laundry
 flask --app app create-user ralph --name "Ralph" --admin   # asks for the password
 python seed.py                                            # demo users alice (admin) and bob
 ```
