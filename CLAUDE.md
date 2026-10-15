@@ -9,6 +9,7 @@ changing the data model, booking rules or security code.
 ```bash
 pip install -r requirements-dev.txt          # setup (use a venv)
 ruff check . && pytest                       # both must pass before committing (CI runs the same)
+docker build -t laundry-booking:ci . && scripts/docker-smoke-test.sh   # after Dockerfile/entrypoint changes
 flask --app laundry --debug seed-demo        # demo users alice/password123 (admin), bob/password456
 flask --app laundry --debug run              # dev server on :5000
 ```

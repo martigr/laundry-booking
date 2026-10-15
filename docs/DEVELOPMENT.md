@@ -46,10 +46,11 @@ tests/
 ├── test_admin.py         # admin area
 └── test_cli.py           # CLI commands, first-admin bootstrap
 docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
+scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
-.github/workflows/ci.yml  # ruff + pytest on every push to main and every PR
+.github/workflows/ci.yml  # ruff, pytest, shellcheck + Docker build and smoke test
 ```
 
 ## Running locally
@@ -219,8 +220,18 @@ Fixtures in `tests/conftest.py`:
 | `query` | `query(sql, *params)` returns rows as tuples |
 | `reservations` | current bookings as `(day, slot, username)` tuples |
 
-Add a test for every new route or rule, including the 400/403/404 paths. CI runs
-`ruff check .` and `pytest` on every pull request.
+Add a test for every new route or rule, including the 400/403/404 paths.
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`:
+
+- **test:** `ruff check .`, `pytest`, `shellcheck` on the shell scripts
+- **docker:** `docker build`, then `scripts/docker-smoke-test.sh`, which starts the image three
+  times: with a named volume (health check, app runs as UID 1000, `create-user` via
+  `docker exec`), with a root-owned host folder and `PUID/PGID` (ownership gets fixed) and
+  with `--user` on a folder it can't write (must stop with the clear error message).
+
+Run the Docker part locally with
+`docker build -t laundry-booking:ci . && scripts/docker-smoke-test.sh`.
 
 ## Deployment
 

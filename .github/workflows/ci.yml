@@ -18,3 +18,13 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest
+      - run: shellcheck docker-entrypoint.sh scripts/*.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t laundry-booking:ci .
+      - name: Smoke test (startup, app user, volume permissions)
+        run: scripts/docker-smoke-test.sh laundry-booking:ci
