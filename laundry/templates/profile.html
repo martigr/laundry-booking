@@ -15,7 +15,7 @@
     <h2>Anzeigename</h2>
     <div class="field">
       <label for="display_name">So sehen dich die anderen im Kalender</label>
-      <input type="text" id="display_name" name="display_name" value="{{ g.user['display_name'] }}" maxlength="40" required>
+      <input type="text" id="display_name" name="display_name" value="{{ g.user['display_name'] }}" maxlength="{{ max_name }}" required>
     </div>
     <div><button type="submit" class="btn btn-dark">Speichern</button></div>
   </form>
@@ -34,6 +34,11 @@
       <span class="hint">Mindestens {{ min_pw }} Zeichen.</span>
     </div>
     <div><button type="submit" class="btn btn-dark">Passwort ändern</button></div>
+  </form>
+
+  <form class="profile-logout" method="post" action="{{ url_for('auth.logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn" style="width:100%">Abmelden</button>
   </form>
 </div>
 {% endblock %}

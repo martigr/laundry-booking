@@ -1,0 +1,16 @@
+[project]
+name = "laundry-booking"
+version = "1.0.0"
+description = "Laundry room booking for a shared washing machine"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

@@ -44,6 +44,9 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .mainnav a:hover { background: var(--subtle); color: var(--ink); }
 .mainnav a.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .userbox { display: flex; align-items: center; gap: 8px; }
+.userbox form { margin: 0; }
+.profile-logout { display: none; }
+@media (max-width: 480px) { .profile-logout { display: block; } }
 .user-pill { display: flex; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border: 1px solid var(--border); border-radius: 999px; text-decoration: none; color: var(--ink); }
 .user-pill:hover { color: var(--ink); background: var(--subtle); }
 .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
@@ -214,5 +217,8 @@ td.actions form { display: inline; margin: 0 0 0 12px; }
 }
 @media (max-width: 480px) {
   .brand-name { display: none; }
-  .topbar-inner { flex-wrap: nowrap; gap: 12px; }
+  .topbar-inner { flex-wrap: nowrap; gap: 10px; }
+  .mainnav { flex-wrap: nowrap; gap: 2px; }
+  .mainnav a { padding: 10px 6px; }
+  .userbox form { display: none; } /* logout moves to the profile page */
 }

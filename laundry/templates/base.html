@@ -11,22 +11,25 @@
 {% block body %}
 <header class="topbar">
   <div class="topbar-inner">
-    <a class="brand" href="{{ url_for('index') }}">
+    <a class="brand" href="{{ url_for('bookings.index') }}">
       <span class="brand-mark">{% include '_logo.html' %}</span>
       <span class="brand-name">Waschküche</span>
     </a>
     <nav class="mainnav" aria-label="Hauptnavigation">
-      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint in ('index', 'month') }}">Kalender</a>
+      <a href="{{ url_for('bookings.index') }}" class="{{ 'active' if request.endpoint in ('bookings.index', 'bookings.month') }}">Kalender</a>
       {% if g.user['is_admin'] %}
-      <a href="{{ url_for('admin') }}" class="{{ 'active' if request.endpoint == 'admin' }}">Verwaltung</a>
+      <a href="{{ url_for('admin.index') }}" class="{{ 'active' if request.endpoint == 'admin.index' }}">Verwaltung</a>
       {% endif %}
     </nav>
     <div class="userbox">
-      <a class="user-pill" href="{{ url_for('profile') }}" title="Profil">
+      <a class="user-pill" href="{{ url_for('profile.index') }}" title="Profil">
         <span class="avatar">{{ g.user['display_name'][:1]|upper }}</span>
         <span class="user-text"><strong>{{ g.user['display_name'] }}</strong><small>{{ 'Admin' if g.user['is_admin'] else 'Profil' }}</small></span>
       </a>
-      <a class="btn btn-small" href="{{ url_for('logout') }}">Abmelden</a>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-small">Abmelden</button>
+      </form>
     </div>
   </div>
 </header>

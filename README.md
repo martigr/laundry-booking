@@ -1,103 +1,98 @@
-# Laundry Booking System
+# Laundry Booking
 
-A Flask-based web application for managing shared laundry room reservations in apartment buildings.
+A small web app for booking the shared washing machine in an apartment building.
+Residents see a week calendar with three slots per day and book a free slot with one click.
+Whoever is first gets the slot; if something doesn't fit, people talk to each other.
+
+## Screenshots
+
+![Week view](docs/screenshots/week.png)
+
+<table>
+  <tr>
+    <td width="32%" valign="top"><img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub></td>
+    <td valign="top">
+      <img src="docs/screenshots/month.png" alt="Month overview"><br><sub>Month overview</sub><br><br>
+      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub>
+    </td>
+  </tr>
+</table>
+
+![Login](docs/screenshots/login.png)
 
 ## Features
 
 - Login per household (user with a free display name); "stay signed in" option
-- Week view (default) and month view, usable on phones
-- Daily time slots: Vormittag 07–12, Nachmittag 12–17, Abend 17–22
+- Week view (default) and month overview, usable on phones
+- Daily slots: Vormittag 07–12, Nachmittag 12–17, Abend 17–22
 - One click on a free slot books it, one click on your own booking cancels it
 - "Now in the laundry room" card, next free slot and your upcoming bookings
-- No quota: whoever is first gets the slot; past slots can't be booked or cancelled
-- Minimal admin area: create/delete users, reset passwords, set how many weeks ahead bookings are allowed; admins can cancel any booking
-- CSRF protection on all forms
+- Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
+- Minimal admin area: create/delete users, reset passwords, set the booking horizon;
+  admins can cancel any booking
+- CSRF protection on all forms; German UI
 
-## Requirements
+## Quick start (development)
 
-- Python 3.13+
-- Flask
-- SQLite3 (built-in)
-
-## Installation
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Running Locally (Development)
-
-Use the built-in Flask server only for development. From the `laundry` folder:
+Requires Python 3.13.
 
 ```bash
-# set FLASK_APP if needed and run for development
-cd laundry
-python app.py
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+flask --app laundry --debug seed-demo   # demo users: alice / password123 (admin), bob / password456
+flask --app laundry --debug run         # http://localhost:5000
 ```
 
-The app will be available at `http://localhost:5000`.
+In debug mode a development `SECRET_KEY` is used and the database is created at `instance/laundry.db`.
 
-## Running Locally (Production-like)
-
-Run a production WSGI server on your machine. Example (Unix):
+Run the checks:
 
 ```bash
-# using Gunicorn
-pip install -r requirements.txt
-cd laundry
-gunicorn -w 4 -b 0.0.0.0:5000 app:app
+ruff check .
+pytest
 ```
 
-This guide targets Linux-based deployments; on Linux use Gunicorn as shown above. For Windows, use Docker or WSL if needed.
-
-## Docker (Production)
-
-Set a safe secret and run Gunicorn inside the container:
+## Production (Docker)
 
 ```bash
-# build
 docker build -t laundry-booking .
-# run (replace SECRET_KEY and optionally DATABASE)
-docker run -e SECRET_KEY='a-very-long-random-secret' -p 5000:5000 laundry-booking
+docker run -d --name laundry -p 5000:5000 \
+  -v laundry-data:/data \
+  -e SECRET_KEY='a-long-random-secret' \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='change-me-please' \
+  laundry-booking
 ```
 
-Notes:
-- Set `SECRET_KEY` to a long random string in production. Do not commit it to source control.
-- `ADMIN_USERNAME` / `ADMIN_PASSWORD` create the first admin when the database has no users yet.
-- `APP_TIMEZONE` (default `Europe/Zurich`) decides what "today" and "now" mean.
-- You can set `DATABASE` to point to a persistent file or external DB.
-- The app exposes `/health` for health checks.
+- The container runs Gunicorn as an unprivileged user; the database lives in the `/data` volume.
+- `ADMIN_USERNAME`/`ADMIN_PASSWORD` create the first admin when the database has no users yet.
+  Afterwards the admin creates all other users in the app under *Verwaltung*.
+- Serve it behind HTTPS (reverse proxy) and set `SESSION_COOKIE_SECURE=1`.
+- `/health` is used by the Docker health check.
 
-## Database
+Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"` with the same environment variables.
 
-The app uses SQLite with automatic schema initialization. The database file (`laundry.db`) is created on first run.
+## Configuration
 
-To give an existing user admin rights:
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | – (required outside debug mode) | Session signing |
+| `DATABASE` | `instance/laundry.db` (`/data/laundry.db` in Docker) | SQLite file |
+| `APP_TIMEZONE` | `Europe/Zurich` | Defines "today" and "now" |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | First admin on an empty database |
+| `SESSION_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS |
+| `LOG_LEVEL` | `INFO` | Log level |
+
+## Command line
 
 ```bash
-cd laundry
-flask --app app make-admin <username>
+flask --app laundry create-user <username> [--name "Display name"] [--admin]   # asks for the password
+flask --app laundry make-admin <username>
+flask --app laundry seed-demo                                                  # demo data, development only
 ```
 
-## Users
-
-Admins create users in the app under *Verwaltung*. From the command line:
-
-```bash
-cd laundry
-flask --app app create-user ralph --name "Ralph" --admin   # asks for the password
-python seed.py                                            # demo users alice (admin) and bob
-```
+In Docker: `docker exec -it laundry flask --app laundry create-user ...`
 
 ## Development
 
-Architecture, data model, routes, security notes and conventions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
-
-## Tests
-
-```bash
-pip install -r requirements-dev.txt
-pytest
-```
+Architecture, data model, routes, security notes and conventions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
