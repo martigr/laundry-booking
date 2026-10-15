@@ -20,7 +20,7 @@ served. Admins manage users and the booking horizon.
 ```
 laundery/                 # app root (folder name is a historical typo, keep it:
 │                         #  Dockerfile and docs depend on it)
-├── app.py                # config, DB, migration, auth, routes, CLI
+├── app.py                # config, DB schema, auth, routes, CLI
 ├── seed.py               # demo users for local testing
 ├── static/style.css      # all styles (design tokens as CSS variables)
 └── templates/
@@ -57,7 +57,7 @@ All configuration comes from environment variables (read at import time):
 | Variable | Default | Purpose |
 |---|---|---|
 | `SECRET_KEY` | insecure placeholder (warning logged) | Session signing |
-| `DATABASE` | `./reservations.db` | SQLite file |
+| `DATABASE` | `./laundry.db` | SQLite file |
 | `APP_TIMEZONE` | `Europe/Zurich` | Defines "today"/"now" for past/running slots |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | Create the first admin if the DB has no users |
 | `SESSION_COOKIE_SECURE` | `0` | Set `1` behind HTTPS |
@@ -89,21 +89,18 @@ value TEXT         defaults in DEFAULT_SETTINGS
   times. Renaming a slot orphans existing rows, so add a migration if you do.
 - Deleting a user also deletes all of their reservations.
 
-### Schema changes and migrations
+### Schema initialisation and changes
 
 `init_db()` runs on import (so it also runs under Gunicorn, once per worker).
 It opens one `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock,
 so parallel workers run it one after another. Inside it:
 
-1. detect old schemas and migrate them (`_migrate_from_apartments`, for the
-   first version that booked per apartment),
-2. `CREATE TABLE IF NOT EXISTS` for the current schema,
-3. bootstrap the first admin from env vars.
+1. `CREATE TABLE IF NOT EXISTS` for the current schema,
+2. bootstrap the first admin from env vars.
 
-To change the schema, add a detection step plus a migration function in the
-same style. It must be idempotent: `init_db()` runs on every start. Add a test
-that builds the old schema by hand and checks the result (see
-`test_migration_from_apartments`).
+There are no migrations yet. Once the app holds real data, a schema change
+needs an idempotent migration step inside `init_db()` (it runs on every
+start) plus a test that builds the old schema by hand and checks the result.
 
 ## Request flow
 

@@ -72,9 +72,9 @@ Notes:
 
 ## Database
 
-The app uses SQLite with automatic schema initialization. The database file (`reservations.db`) is created on first run.
+The app uses SQLite with automatic schema initialization. The database file (`laundry.db`) is created on first run.
 
-Databases from the first version (bookings per apartment) are migrated automatically on startup: every user keeps their login, the apartment name becomes the display name and each booking goes to the user of that apartment. Afterwards, give yourself admin rights:
+To give an existing user admin rights:
 
 ```bash
 cd laundery

@@ -1,4 +1,3 @@
-import sqlite3
 from datetime import datetime
 
 import pytest
@@ -143,33 +142,3 @@ def test_admin(client):
     assert laundry.get_setting('horizon_weeks') == '1'
     client.post('/book', data={'day': '2026-10-30', 'slot': 'Abend', 'csrf_token': t})
     assert reservations() == []
-
-
-def test_migration_from_apartments(tmp_path):
-    path = tmp_path / 'old.db'
-    con = sqlite3.connect(path)
-    con.executescript("""
-        CREATE TABLE apartments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
-        CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
-                            password TEXT NOT NULL, apartment_id INTEGER NOT NULL);
-        CREATE TABLE reservations (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT, slot TEXT,
-                                   apartment_id INTEGER NOT NULL);
-        INSERT INTO apartments (name) VALUES ('Whg 31.1'), ('Whg 31.2'), ('Whg 31.3');
-        INSERT INTO users (username, password, apartment_id) VALUES ('alice', 'h1', 1), ('bob', 'h2', 2);
-        INSERT INTO reservations (day, slot, apartment_id) VALUES
-            ('2026-10-01', 'Abend', 1), ('2026-10-02', 'Abend', 2), ('2026-10-03', 'Abend', 3);
-    """)
-    con.commit()
-    con.close()
-
-    laundry.app.config['DATABASE'] = str(path)
-    laundry.init_db()
-    laundry.init_db()  # idempotent
-
-    with laundry.db() as con:
-        users = [tuple(r) for r in con.execute("SELECT username, password, display_name FROM users ORDER BY id")]
-        assert users == [('alice', 'h1', 'Whg 31.1'), ('bob', 'h2', 'Whg 31.2')]
-        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert 'apartments' not in tables
-    # apartment 31.3 had no user, so its booking is dropped
-    assert reservations() == [('2026-10-01', 'Abend', 'alice'), ('2026-10-02', 'Abend', 'bob')]

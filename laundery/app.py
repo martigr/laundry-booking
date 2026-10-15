@@ -22,7 +22,7 @@ if app.config['SECRET_KEY'] == 'please-change-this-secret':
     logging.warning("Using default SECRET_KEY — set SECRET_KEY env var in production")
 
 # SQLite DB path (can be set via env var)
-app.config['DATABASE'] = os.environ.get('DATABASE') or os.path.join(os.getcwd(), 'reservations.db')
+app.config['DATABASE'] = os.environ.get('DATABASE') or os.path.join(os.getcwd(), 'laundry.db')
 
 # Local time zone of the building; decides what "today" and "now" mean
 TZ = ZoneInfo(os.environ.get('APP_TIMEZONE', 'Europe/Zurich'))
@@ -63,62 +63,12 @@ def db():
     return con
 
 
-def _columns(con, table):
-    return [r['name'] for r in con.execute(f"PRAGMA table_info({table})")]
-
-
-def _migrate_from_apartments(con):
-    """Old schema booked per apartment; convert to bookings per user.
-
-    Each user keeps their login, the apartment name becomes the display name and
-    every reservation goes to the (first) user of its apartment.
-    """
-    logging.info('Migrating database: apartments -> users')
-    con.execute("""
-        CREATE TABLE users_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            display_name TEXT NOT NULL,
-            is_admin INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    con.execute("""
-        INSERT INTO users_new (id, username, password, display_name, is_admin)
-        SELECT u.id, u.username, u.password, COALESCE(a.name, u.username), 0
-        FROM users u LEFT JOIN apartments a ON a.id = u.apartment_id
-    """)
-    con.execute("""
-        CREATE TABLE reservations_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            day TEXT NOT NULL,
-            slot TEXT NOT NULL,
-            user_id INTEGER NOT NULL REFERENCES users(id),
-            UNIQUE (day, slot)
-        )
-    """)
-    con.execute("""
-        INSERT OR IGNORE INTO reservations_new (id, day, slot, user_id)
-        SELECT r.id, r.day, r.slot,
-               (SELECT MIN(u.id) FROM users u WHERE u.apartment_id = r.apartment_id)
-        FROM reservations r
-        WHERE EXISTS (SELECT 1 FROM users u WHERE u.apartment_id = r.apartment_id)
-    """)
-    con.execute("DROP TABLE reservations")
-    con.execute("DROP TABLE users")
-    con.execute("DROP TABLE apartments")
-    con.execute("ALTER TABLE users_new RENAME TO users")
-    con.execute("ALTER TABLE reservations_new RENAME TO reservations")
-
-
 def init_db():
     con = db()
     con.isolation_level = None  # explicit transaction below
     try:
         # IMMEDIATE takes the write lock, so parallel Gunicorn workers run this one after another
         con.execute("BEGIN IMMEDIATE")
-        if 'apartment_id' in _columns(con, 'users'):
-            _migrate_from_apartments(con)
         con.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
