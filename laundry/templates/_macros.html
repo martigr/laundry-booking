@@ -8,7 +8,7 @@
   {% if c.cancelable %}<span class="s-hover">Stornieren</span>{% endif %}
 {%- endset -%}
 {%- if c.bookable -%}
-<form method="post" action="{{ url_for('book') }}">
+<form method="post" action="{{ url_for('bookings.book') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="day" value="{{ c.day }}">
   <input type="hidden" name="slot" value="{{ c.slot }}">
@@ -16,7 +16,7 @@
   <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} buchen">{{ inner }}</button>
 </form>
 {%- elif c.cancelable -%}
-<form method="post" action="{{ url_for('cancel', rid=c.res['id']) }}"{% if not c.mine %} onsubmit='return confirm({{ ("Buchung von " ~ c.res["display_name"] ~ " stornieren?")|tojson }})'{% endif %}>
+<form method="post" action="{{ url_for('bookings.cancel', rid=c.res['id']) }}"{% if not c.mine %} onsubmit='return confirm({{ ("Buchung von " ~ c.res["display_name"] ~ " stornieren?")|tojson }})'{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="next" value="{{ request.full_path }}">
   <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}) stornieren">{{ inner }}</button>

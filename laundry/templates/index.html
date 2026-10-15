@@ -9,14 +9,14 @@
   </div>
   <div class="toolbar">
     <div class="segmented" role="group" aria-label="Ansicht">
-      <a href="{{ url_for('index', week=this_week) }}" class="active" aria-current="page">Woche</a>
-      <a href="{{ url_for('month', month=month_param) }}">Monat</a>
+      <a href="{{ url_for('bookings.index', week=this_week) }}" class="active" aria-current="page">Woche</a>
+      <a href="{{ url_for('bookings.month', month=month_param) }}">Monat</a>
     </div>
-    <a class="btn btn-icon" href="{{ url_for('index', week=prev_week) }}" aria-label="Vorherige Woche">
+    <a class="btn btn-icon" href="{{ url_for('bookings.index', week=prev_week) }}" aria-label="Vorherige Woche">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
     </a>
-    <a class="btn" href="{{ url_for('index') }}">Heute</a>
-    <a class="btn btn-icon" href="{{ url_for('index', week=next_week) }}" aria-label="Nächste Woche">
+    <a class="btn" href="{{ url_for('bookings.index') }}">Heute</a>
+    <a class="btn btn-icon" href="{{ url_for('bookings.index', week=next_week) }}" aria-label="Nächste Woche">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
     </a>
   </div>
@@ -58,7 +58,7 @@
       <div class="who">Niemand gebucht</div>
       {% endif %}
       {% if next_free %}
-      <div class="meta">Nächster freier Slot: <a href="{{ url_for('index', week=next_free.week) }}"><strong>{{ next_free.label }}, {{ next_free.slot }}</strong></a></div>
+      <div class="meta">Nächster freier Slot: <a href="{{ url_for('bookings.index', week=next_free.week) }}"><strong>{{ next_free.label }}, {{ next_free.slot }}</strong></a></div>
       {% endif %}
     </div>
 
@@ -70,7 +70,7 @@
         <li>
           <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
           <div class="what"><strong>{{ u.label }}</strong><span>{{ u.slot }} · {{ u.slot|slot_time }}</span></div>
-          <form method="post" action="{{ url_for('cancel', rid=u.id) }}">
+          <form method="post" action="{{ url_for('bookings.cancel', rid=u.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="next" value="{{ request.full_path }}">
             <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.slot }} stornieren">Stornieren</button>

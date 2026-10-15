@@ -26,11 +26,11 @@
               {% if u['id'] == g.user['id'] %}
               <span class="hint">Du</span>
               {% else %}
-              <form method="post" action="{{ url_for('admin_reset_password', uid=u['id']) }}" onsubmit='return confirm({{ ("Neues Passwort für " ~ u["display_name"] ~ " erzeugen?")|tojson }})'>
+              <form method="post" action="{{ url_for('admin.reset_password', uid=u['id']) }}" onsubmit='return confirm({{ ("Neues Passwort für " ~ u["display_name"] ~ " erzeugen?")|tojson }})'>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="linklike">Passwort zurücksetzen</button>
               </form>
-              <form method="post" action="{{ url_for('admin_delete_user', uid=u['id']) }}" onsubmit='return confirm({{ (u["display_name"] ~ " und alle Buchungen löschen?")|tojson }})'>
+              <form method="post" action="{{ url_for('admin.delete', uid=u['id']) }}" onsubmit='return confirm({{ (u["display_name"] ~ " und alle Buchungen löschen?")|tojson }})'>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="linklike danger">Löschen</button>
               </form>
@@ -42,15 +42,15 @@
       </table>
     </div>
 
-    <form class="inline-form" method="post" action="{{ url_for('admin_create_user') }}">
+    <form class="inline-form" method="post" action="{{ url_for('admin.create') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="display_name">Anzeigename</label>
-        <input type="text" id="display_name" name="display_name" placeholder="z. B. Müller 2. OG" maxlength="40">
+        <input type="text" id="display_name" name="display_name" placeholder="z. B. Müller 2. OG" maxlength="{{ max_name }}">
       </div>
       <div class="field">
         <label for="username">Benutzername</label>
-        <input type="text" id="username" name="username" maxlength="40" autocapitalize="none" required>
+        <input type="text" id="username" name="username" maxlength="{{ max_name }}" autocapitalize="none" required>
       </div>
       <div class="field">
         <label for="password">Startpasswort</label>
@@ -61,7 +61,7 @@
     </form>
   </section>
 
-  <form class="card split-side" method="post" action="{{ url_for('admin_settings') }}">
+  <form class="card split-side" method="post" action="{{ url_for('admin.settings') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2>Einstellungen</h2>
     <div class="field">

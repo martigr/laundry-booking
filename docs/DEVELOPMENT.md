@@ -10,7 +10,8 @@ Residents log in, see a week (or month) calendar with three slots per day
 and book a free slot with one click. There are no quotas: first come, first
 served. Admins manage users and the booking horizon.
 
-- **Backend:** one module, `laundry/app.py` (Flask, SQLite, no ORM)
+- **Backend:** Python package `laundry/` built with an app factory and blueprints;
+  SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only `confirm()` dialogs)
 - **UI language:** German. Code, comments, commit messages and docs: English.
@@ -18,9 +19,16 @@ served. Admins manage users and the booking horizon.
 ## Project layout
 
 ```
-laundry/                  # app root (run app.py and seed.py from here)
-├── app.py                # config, DB schema, auth, routes, CLI
-├── seed.py               # demo users for local testing
+laundry/                  # the application package
+├── __init__.py           # create_app(): config, blueprints, /health, schema setup
+├── db.py                 # connection per request, schema, init_db(), settings
+├── users.py              # create_user(), get_user*(), set_password(), UserError
+├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
+├── auth.py               # bp "auth": login/logout, CSRF, login_required/admin_required
+├── bookings.py           # bp "bookings": week/month view, book, cancel
+├── profile.py            # bp "profile": display name, password
+├── admin.py              # bp "admin": users, settings
+├── cli.py                # flask commands: create-user, make-admin, seed-demo
 ├── static/style.css      # all styles (design tokens as CSS variables)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages
@@ -29,12 +37,18 @@ laundry/                  # app root (run app.py and seed.py from here)
     ├── index.html        # week view + side cards
     ├── month.html        # month overview (links into week view)
     ├── login.html        # overrides block body (no header)
-    ├── profile.html      # display name, password
-    └── admin.html        # users, settings
+    ├── profile.html
+    └── admin.html
 tests/
-├── conftest.py           # puts laundry/ on sys.path, temp DATABASE
-└── test_app.py           # pytest suite (Flask test client)
-docs/DEVELOPMENT.md       # this file
+├── conftest.py           # fixtures: app, client, login, csrf, query, reservations
+├── test_auth.py          # login, logout, CSRF, SECRET_KEY, profile
+├── test_bookings.py      # booking rules, cancel permissions, views, escaping
+├── test_admin.py         # admin area
+└── test_cli.py           # CLI commands, first-admin bootstrap
+pyproject.toml            # project metadata, pytest and ruff config
+requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
+requirements-dev.txt      # + pytest, ruff
+.github/workflows/ci.yml  # ruff + pytest on every push to main and every PR
 ```
 
 ## Running locally
@@ -42,27 +56,30 @@ docs/DEVELOPMENT.md       # this file
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-cd laundry
-python seed.py            # demo users: alice / password123 (admin), bob / password456
-python app.py             # http://localhost:5000
+flask --app laundry --debug seed-demo
+flask --app laundry --debug run
 ```
 
-Run the tests from the repository root with `pytest`.
+`--debug` matters: without it, `create_app()` refuses to start without a `SECRET_KEY`.
+That rule protects production from running with a known key.
+
+### Demo data vs. test data
+
+`seed-demo` is a **development tool**. It fills your local database with demo users
+and a few bookings around the current week, so you have something to click through.
+It is idempotent and safe to run repeatedly.
+
+Tests do **not** use it. Every test gets a fresh temporary database with exactly two
+users (`alice` admin, `bob`) and a fixed clock, created by the `app` fixture in
+`tests/conftest.py`. Tests need a small, exact and stable state; demo data is meant to
+look realistic and may change. Both use the same `users.create_user()`, so no code is
+duplicated.
 
 ## Configuration
 
-All configuration comes from environment variables (read at import time):
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SECRET_KEY` | insecure placeholder (warning logged) | Session signing |
-| `DATABASE` | `./laundry.db` | SQLite file |
-| `APP_TIMEZONE` | `Europe/Zurich` | Defines "today"/"now" for past/running slots |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | Create the first admin if the DB has no users |
-| `SESSION_COOKIE_SECURE` | `0` | Set `1` behind HTTPS |
-| `SESSION_COOKIE_SAMESITE` | `Lax` | Cookie SameSite policy |
-| `LOG_LEVEL` | `INFO` | Logging |
-| `PORT` | `5000` | Dev server only |
+`create_app(test_config=None)` reads the environment (see the README for the table) and
+then applies `test_config` on top. Config keys: `SECRET_KEY`, `DATABASE`, `TIMEZONE`,
+`ADMIN_USERNAME`, `ADMIN_PASSWORD` and the Flask session cookie settings.
 
 ## Data model
 
@@ -70,131 +87,134 @@ All configuration comes from environment variables (read at import time):
 users                                   reservations
 ─────                                   ────────────
 id            INTEGER PK                id        INTEGER PK
-username      TEXT UNIQUE               day       TEXT  ISO date 'YYYY-MM-DD'
+username      TEXT UNIQUE (lowercase)   day       TEXT  ISO date 'YYYY-MM-DD'
 password      TEXT  werkzeug hash       slot      TEXT  one of SLOTS names
-display_name  TEXT  shown in calendar   user_id   INTEGER → users.id
+display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE CASCADE
 is_admin      INTEGER 0/1               UNIQUE (day, slot)
 
 settings
 ────────
 key   TEXT PK      e.g. 'horizon_weeks'
-value TEXT         defaults in DEFAULT_SETTINGS
+value TEXT         defaults in db.DEFAULT_SETTINGS
 ```
 
-- `UNIQUE (day, slot)` is the only guard against double bookings. `book()`
-  relies on the `IntegrityError` instead of checking first, so two
-  simultaneous clicks cannot both succeed.
-- Slots are stored by **name**. `SLOTS` in `app.py` maps names to start/end
-  times. Renaming a slot orphans existing rows, so add a migration if you do.
-- Deleting a user also deletes all of their reservations.
+- `UNIQUE (day, slot)` is the only guard against double bookings. `book()` relies on
+  the `IntegrityError` instead of checking first, so two simultaneous clicks cannot
+  both succeed.
+- Usernames are stored lowercase and trimmed; login is therefore case-insensitive.
+- Slots are stored by **name**. `slots.SLOTS` maps names to times. Renaming a slot
+  orphans existing rows.
+- `PRAGMA foreign_keys = ON` is set on every connection, so deleting a user deletes
+  their bookings.
 
-### Schema initialisation and changes
+### Database access
 
-`init_db()` runs on import (so it also runs under Gunicorn, once per worker).
-It opens one `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock,
-so parallel workers run it one after another. Inside it:
-
-1. `CREATE TABLE IF NOT EXISTS` for the current schema,
-2. bootstrap the first admin from env vars.
-
-There are no migrations yet. Once the app holds real data, a schema change
-needs an idempotent migration step inside `init_db()` (it runs on every
-start) plus a test that builds the old schema by hand and checks the result.
+- `db.get_db()` returns the connection of the current request (stored on `g`, closed on
+  teardown). Use `with get_db() as con:` for writes; it commits on success and rolls
+  back on errors.
+- `db.init_db()` runs inside `create_app()`, so once per Gunicorn worker. It runs in a
+  `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock, so parallel workers run
+  it one after another. It creates the schema (`CREATE TABLE IF NOT EXISTS`) and the first
+  admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on an empty database. WAL mode is enabled
+  once and persists in the file.
+- There are no migrations yet. Once the app holds real data, a schema change needs an
+  idempotent migration step in `init_db()` plus a test that builds the old schema.
 
 ## Request flow
 
-- `before_request` hooks: `check_csrf()` (every POST) and `load_user()` sets
-  `g.user` (a `sqlite3.Row` or `None`).
-- Decorators: `@login_required` redirects to `/login`; `@admin_required`
-  also returns 403 for non-admins.
+- `before_request` hooks (registered by `auth.init_app`): `check_csrf()` for every POST,
+  then `load_user()`, which sets `g.user` (a `sqlite3.Row` or `None`) and ends the
+  session if the user was deleted.
+- Decorators: `@login_required` redirects to the login page; `@admin_required` also
+  returns 403 for non-admins.
 - State-changing actions are plain HTML form POSTs that answer with a redirect
-  (Post/Redirect/Get). Feedback goes through `flash(message, 'ok' | 'warn')`,
-  rendered in `base.html`.
-- After book/cancel, `back_to_calendar()` returns to the form's `next` field
-  (local paths only, so it can't be used as an open redirect).
+  (Post/Redirect/Get). Feedback goes through `flash(message, 'ok' | 'warn')`.
+- After book/cancel, `back_to_calendar()` returns to the form's `next` field. Only local
+  paths are accepted; `//host`, `/\host` and absolute URLs fall back to `/`.
 
 ### Routes
 
-| Route | Method | Access | Purpose |
-|---|---|---|---|
-| `/login`, `/logout` | GET/POST, GET | public | Session login; `remember` makes the session permanent (30 days) |
-| `/` | GET | user | Week view; `?week=YYYY-MM-DD` (any day of the week) |
-| `/month` | GET | user | Month overview; `?month=YYYY-MM` |
-| `/book` | POST | user | `day`, `slot`, `next` |
-| `/cancel/<id>` | POST | owner or admin | Cancel a booking that has not ended |
-| `/profile` | GET/POST | user | `action=name` or `action=password` |
-| `/admin` | GET | admin | Users and settings |
-| `/admin/users` | POST | admin | Create user |
-| `/admin/users/<id>/reset` | POST | admin | New random password, shown once via flash |
-| `/admin/users/<id>/delete` | POST | admin | Delete user and their bookings (not yourself) |
-| `/admin/settings` | POST | admin | `horizon_weeks` (1–52) |
-| `/health` | GET | public | Liveness probe |
+| Route | Method | Endpoint | Access | Purpose |
+|---|---|---|---|---|
+| `/login` | GET/POST | `auth.login` | public | `remember` makes the session last 30 days |
+| `/logout` | POST | `auth.logout` | public | POST so other sites can't log you out |
+| `/` | GET | `bookings.index` | user | Week view; `?week=YYYY-MM-DD` (any day of the week) |
+| `/month` | GET | `bookings.month` | user | Month overview; `?month=YYYY-MM` |
+| `/book` | POST | `bookings.book` | user | `day`, `slot`, `next` |
+| `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
+| `/profile` | GET/POST | `profile.index` | user | `action=name` or `action=password` |
+| `/admin` | GET | `admin.index` | admin | Users and settings |
+| `/admin/users` | POST | `admin.create` | admin | Create user |
+| `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password, shown once |
+| `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
+| `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
+| `/health` | GET | `health` | public | Liveness probe |
 
 ### Booking rules
 
-All of them live in `book()` and `cancel()`; the UI only mirrors them.
+All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirrors them.
 
-- A slot is **past** once its end time is reached. It can't be booked or
-  cancelled. A **running** slot can still be booked if free.
-- Booking is allowed up to `today + horizon_weeks` (`last_bookable_day()`).
+- A slot is **past** once its end time is reached. It can't be booked or cancelled.
+  A **running** slot can still be booked if it is free.
+- Booking is allowed up to `today + horizon_weeks` (`slots.last_bookable_day()`).
 - Users cancel their own bookings; admins can cancel any.
-- "Now" always comes from `now()`, which uses `APP_TIMEZONE`. Tests
-  monkeypatch it; never call `datetime.now()` directly.
+- "Now" always comes from `slots.now()`, which uses the `TIMEZONE` config. Call it as
+  `slots.now()` (module attribute), never `from .slots import now`, and never
+  `datetime.now()`: the tests replace `slots.now` with a fixed time.
 
 ### Calendar rendering
 
-`build_cell()` turns (day, slot, reservation) into a dict that the template
-consumes: `state` (`free | mine | taken | past | locked`), `bookable`,
-`cancelable`, `running`, display times. The `slot_cell` macro picks the
-markup: a booking form, a cancel form, or a plain `<div>`. Keep the decisions
-in `build_cell()` and keep the templates free of logic.
+`bookings.build_cell()` turns (day, slot, reservation) into a dict for the templates:
+`state` (`free | mine | taken | past | locked`), `bookable`, `cancelable`, `running`
+and the display times. The `slot_cell` macro picks the markup: a booking form, a cancel
+form or a plain `<div>`. Keep decisions in `build_cell()`; keep the templates free of
+logic.
 
-`sidebar_info()` computes the "Jetzt in der Waschküche" card, the next free
+`bookings.sidebar_info()` computes the "Jetzt in der Waschküche" card, the next free
 slot within the horizon and the user's upcoming bookings.
 
 ## Security
 
-- **CSRF:** every POST must carry `csrf_token` (`{{ csrf_token() }}` in the
-  form). The token lives in the session and is checked with `compare_digest`.
-  Each new form needs the hidden field, or it fails with a 400.
-- **Session fixation:** `session.clear()` on login.
-- **Escaping:** Jinja autoescape covers HTML. For values inside inline JS
-  (e.g. `onsubmit` confirm texts) use `|tojson` in a *single-quoted*
-  attribute; `|e` is not safe there. `test_display_name_is_escaped` covers this.
-- **Passwords:** werkzeug hashes, minimum length `MIN_PASSWORD_LENGTH`.
+- **Secret key:** required unless in debug/testing mode (`create_app` raises otherwise).
+- **CSRF:** every POST must carry `csrf_token` (`{{ csrf_token() }}` in a hidden field).
+  The token lives in the session and is compared with `secrets.compare_digest`. A new form
+  without the field fails with 400. (A small hand-written check instead of Flask-WTF,
+  since the app has no other use for WTForms.)
+- **Sessions:** `session.clear()` on login (against session fixation) and logout;
+  HttpOnly and SameSite=Lax cookies; Secure via `SESSION_COOKIE_SECURE`.
+- **Escaping:** Jinja autoescape covers HTML. For values inside inline JS (the
+  `onsubmit` confirm texts) use `|tojson` in a *single-quoted* attribute; `|e` is not
+  safe there. `test_display_name_is_escaped` covers this.
+- **Passwords:** werkzeug hashes, minimum length `users.MIN_PASSWORD_LENGTH`.
+- **Container:** runs as an unprivileged user.
 
 ## Frontend
 
-- Design tokens are CSS variables in `:root` of `style.css` (colours, radius).
-  Blue = your booking, grey = someone else's, dashed = free, orange = today and
-  running slot.
+- Design tokens are CSS variables in `:root` of `style.css`. Blue = your booking,
+  grey = someone else's, dashed = free, orange = today and the running slot.
 - Layout: flexbox/grid. The week grid has 7 columns on desktop and switches at
   `max-width: 860px` to one row per day with the three slots next to each other.
 - System font stack, no external requests (no CDNs, no Google Fonts).
 - Touch targets are at least 44 px; use real `<button>`/`<a>` elements and
   `aria-label` on icon-only buttons.
 
-## CLI
-
-```bash
-cd laundry
-flask --app app create-user <username> [--name "Display name"] [--admin]
-flask --app app make-admin <username>
-```
-
 ## Testing
 
-`tests/test_app.py` uses a temp DB per test, two users (`alice` admin, `bob`)
-and a fixed time (Thursday 2026-10-15 14:20). Helpers:
+Fixtures in `tests/conftest.py`:
 
-- `token(client)` – fetches the CSRF token from the session
-- `login(client, username)` – logs in and returns a fresh token
-- `reservations()` – current bookings as `(day, slot, username)` tuples
+| Fixture | Gives you |
+|---|---|
+| `app` | App with a temp DB, users `alice` (admin) and `bob`, clock fixed at Thu 2026-10-15 14:20 |
+| `client` | Flask test client |
+| `login` | `login('bob')` logs in and returns a CSRF token; `c=` for another client |
+| `csrf` | `csrf()` returns the CSRF token of the client's session |
+| `query` | `query(sql, *params)` returns rows as tuples |
+| `reservations` | current bookings as `(day, slot, username)` tuples |
 
-Add a test for every new route or rule, including the 400/403 paths.
+Add a test for every new route or rule, including the 400/403/404 paths. CI runs
+`ruff check .` and `pytest` on every pull request.
 
 ## Deployment
 
-The `Dockerfile` runs Gunicorn with 4 workers on port 5000. Mount a volume
-and point `DATABASE` at it, or the data is lost with the container. Set
-`SECRET_KEY`, and `SESSION_COOKIE_SECURE=1` when served over HTTPS.
+See the README. In short: build the Docker image, mount a volume at `/data`, set
+`SECRET_KEY` (and the first admin), put it behind HTTPS and set `SESSION_COOKIE_SECURE=1`.
