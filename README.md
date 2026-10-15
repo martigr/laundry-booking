@@ -91,6 +91,10 @@ flask --app app create-user ralph --name "Ralph" --admin   # asks for the passwo
 python seed.py                                            # demo users alice (admin) and bob
 ```
 
+## Development
+
+Architecture, data model, routes, security notes and conventions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
+
 ## Tests
 
 ```bash
