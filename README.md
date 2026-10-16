@@ -26,6 +26,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Week view (default) and month overview, usable on phones
 - Daily slots: Vormittag 07–12, Nachmittag 12–17, Abend 17–22
 - One click on a free slot books it, one click on your own booking cancels it
+- "Ganzer Tag" books all free slots of a day at once
+- Adjacent bookings show up as one block in your upcoming bookings (and cancel together)
 - "Now in the laundry room" card, next free slot and your upcoming bookings
 - Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
 - Minimal admin area: create/delete users, reset passwords, set the booking horizon;

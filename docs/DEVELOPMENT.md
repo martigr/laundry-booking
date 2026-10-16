@@ -7,7 +7,7 @@ For installation and operation see the [README](../README.md).
 
 A small Flask app for one shared washing machine in an apartment building.
 Residents log in, see a week (or month) calendar with three slots per day
-and book a free slot with one click. There are no quotas: first come, first
+and book a free slot (or a whole day) with one click. There are no quotas: first come, first
 served. Admins manage users and the booking horizon.
 
 - **Backend:** Python package `laundry/` built with an app factory and blueprints;
@@ -25,7 +25,7 @@ laundry/                  # the application package
 ├── users.py              # create_user(), get_user*(), set_password(), UserError
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
 ├── auth.py               # bp "auth": login/logout, CSRF, login_required/admin_required
-├── bookings.py           # bp "bookings": week/month view, book, cancel
+├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, password
 ├── admin.py              # bp "admin": users, settings
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo
@@ -143,7 +143,9 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/` | GET | `bookings.index` | user | Week view; `?week=YYYY-MM-DD` (any day of the week) |
 | `/month` | GET | `bookings.month` | user | Month overview; `?month=YYYY-MM` |
 | `/book` | POST | `bookings.book` | user | `day`, `slot`, `next` |
+| `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
+| `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
 | `/profile` | GET/POST | `profile.index` | user | `action=name` or `action=password` |
 | `/admin` | GET | `admin.index` | admin | Users and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
@@ -159,7 +161,11 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
 - A slot is **past** once its end time is reached. It can't be booked or cancelled.
   A **running** slot can still be booked if it is free.
 - Booking is allowed up to `today + horizon_weeks` (`slots.last_bookable_day()`).
-- Users cancel their own bookings; admins can cancel any.
+- **Whole day:** `book_day()` inserts each slot of the day that hasn't ended with
+  `ON CONFLICT (day, slot) DO NOTHING` in one transaction. Slots someone else already has
+  stay theirs; the flash message names them. No quota, like single slots.
+- Users cancel their own bookings; admins can cancel any. `cancel_reservations()` is shared by
+  `/cancel/<id>` and `/cancel`: 404 if any id is missing, 403 if any booking isn't yours.
 - "Now" always comes from `slots.now()`, which uses the `TIMEZONE` config. Call it as
   `slots.now()` (module attribute), never `from .slots import now`, and never
   `datetime.now()`: the tests replace `slots.now` with a fixed time.
@@ -170,10 +176,15 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
 `state` (`free | mine | taken | past | locked`), `bookable`, `cancelable`, `running`
 and the display times. The `slot_cell` macro picks the markup: a booking form, a cancel
 form or a plain `<div>`. Keep decisions in `build_cell()`; keep the templates free of
-logic.
+logic. `build_days()` also sets `book_day`, the label of the day's whole-day button
+("Ganzer Tag", or "Alle freien" if some slots are gone), or `None` when fewer than two
+slots are bookable.
 
 `bookings.sidebar_info()` computes the "Jetzt in der Waschküche" card, the next free
-slot within the horizon and the user's upcoming bookings.
+slot within the horizon and the user's upcoming bookings. `group_blocks()` merges
+adjacent slots of the same day and user into one block ("Nachmittag – Abend",
+"Ganzer Tag"), both in the upcoming list (one cancel button per block) and for the
+running booking.
 
 ## Security
 

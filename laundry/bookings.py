@@ -57,16 +57,49 @@ def build_days(first, count, current):
     days = []
     for i in range(count):
         d = first + timedelta(days=i)
+        cells = [build_cell(d, name, res.get((d.isoformat(), name)), current, last_day) for name in SLOT_NAMES]
+        free = sum(c['bookable'] for c in cells)
         days.append({
             'date': d,
             'wd': WEEKDAYS[d.weekday()],
             'wd_long': WEEKDAYS_LONG[d.weekday()],
             'is_today': d == today,
             'is_past': d < today,
-            'cells': [build_cell(d, name, res.get((d.isoformat(), name)), current, last_day)
-                      for name in SLOT_NAMES],
+            'cells': cells,
+            # Button for /book-day; with a single free slot it would be the same as clicking that slot
+            'book_day': ('Ganzer Tag' if free == len(SLOT_NAMES) else 'Alle freien') if free >= 2 else None,
         })
     return days
+
+
+def slot_list(names):
+    """'ganzer Tag' for all slots of a day, otherwise the names, e.g. 'Vormittag, Abend'."""
+    return 'ganzer Tag' if list(names) == SLOT_NAMES else ', '.join(names)
+
+
+def group_blocks(rows):
+    """Merge reservations of consecutive slots on the same day into blocks.
+
+    `rows` need `id`, `day` (date) and `slot`, sorted by day and slot order.
+    """
+    blocks = []
+    for r in rows:
+        last = blocks[-1] if blocks else None
+        if last and last['day'] == r['day'] and SLOT_NAMES.index(last['slots'][-1]) + 1 == SLOT_NAMES.index(r['slot']):
+            last['slots'].append(r['slot'])
+            last['ids'].append(r['id'])
+        else:
+            blocks.append({'day': r['day'], 'slots': [r['slot']], 'ids': [r['id']]})
+    for b in blocks:
+        start, end = slot_bounds(b['day'], b['slots'][0])[0], slot_bounds(b['day'], b['slots'][-1])[1]
+        if b['slots'] == SLOT_NAMES:
+            b['name'] = 'Ganzer Tag'
+        elif len(b['slots']) > 1:
+            b['name'] = f"{b['slots'][0]} – {b['slots'][-1]}"
+        else:
+            b['name'] = b['slots'][0]
+        b.update(start=start, end=end, time=f'{start:%H:%M} – {end:%H:%M}')
+    return blocks
 
 
 def sidebar_info(current):
@@ -85,8 +118,13 @@ def sidebar_info(current):
                 continue
             r = res.get((d.isoformat(), name))
             if start <= current and r:
-                running = {'res': r, 'end': end, 'mine': r['user_id'] == g.user['id'],
-                           'progress': int((current - start) / (end - start) * 100)}
+                # The running booking plus the same user's adjacent slots that day
+                same = [{'id': x['id'], 'day': d, 'slot': n} for n in SLOT_NAMES
+                        if (x := res.get((d.isoformat(), n))) and x['user_id'] == r['user_id']]
+                block = next(b for b in group_blocks(same) if r['id'] in b['ids'])
+                running = {'res': r, 'name': block['name'], 'end': block['end'],
+                           'mine': r['user_id'] == g.user['id'],
+                           'progress': int((current - block['start']) / (block['end'] - block['start']) * 100)}
             if r is None:
                 next_free = {'slot': name, 'label': 'heute' if d == today else fmt_day(d), 'week': d.isoformat()}
                 break
@@ -99,9 +137,11 @@ def sidebar_info(current):
     for r in rows:
         day = parse_day(r['day'])
         if slot_bounds(day, r['slot'])[1] > current:
-            upcoming.append({'id': r['id'], 'day': day, 'slot': r['slot'], 'wd': WEEKDAYS[day.weekday()],
-                             'label': 'heute' if day == today else fmt_day(day)})
+            upcoming.append({'id': r['id'], 'day': day, 'slot': r['slot']})
     upcoming.sort(key=lambda u: (u['day'], SLOT_NAMES.index(u['slot'])))
+    upcoming = group_blocks(upcoming)
+    for b in upcoming:
+        b.update(wd=WEEKDAYS[b['day'].weekday()], label='heute' if b['day'] == today else fmt_day(b['day']))
 
     return {'running': running, 'next_free': next_free, 'upcoming': upcoming[:6]}
 
@@ -190,25 +230,75 @@ def book():
     return back_to_calendar()
 
 
-@bp.route('/cancel/<int:rid>', methods=['POST'])
+@bp.route('/book-day', methods=['POST'])
 @login_required
-def cancel(rid):
-    con = get_db()
-    r = con.execute('SELECT * FROM reservations WHERE id = ?', (rid,)).fetchone()
-    if r is None:
-        abort(404)
-    if r['user_id'] != g.user['id'] and not g.user['is_admin']:
-        abort(403)
-    day = parse_day(r['day'])
-    if slot_bounds(day, r['slot'])[1] <= slots.now():
-        flash('Vergangene Buchungen können nicht storniert werden.', 'warn')
+def book_day():
+    """Book every free slot of a day that hasn't ended yet; slots someone else has stay theirs."""
+    day = parse_day(request.form.get('day'))
+    if day is None:
+        abort(400)
+
+    current = slots.now()
+    open_slots = [name for name in SLOT_NAMES if slot_bounds(day, name)[1] > current]
+    if not open_slots:
+        flash(f'{fmt_day(day)} liegt in der Vergangenheit.', 'warn')
+    elif day > last_bookable_day(current.date()):
+        flash(f'{fmt_day(day)} kann noch nicht gebucht werden.', 'warn')
     else:
-        with con:
-            con.execute('DELETE FROM reservations WHERE id = ?', (rid,))
-        flash(f'Storniert: {fmt_day(day)} · {r["slot"]}', 'ok')
+        with get_db() as con:
+            # One transaction; UNIQUE (day, slot) skips slots that are already booked
+            booked = [name for name in open_slots if con.execute(
+                'INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?) ON CONFLICT (day, slot) DO NOTHING',
+                (day.isoformat(), name, g.user['id'])).rowcount]
+            others = [r['slot'] for r in con.execute(
+                'SELECT slot FROM reservations WHERE day = ? AND user_id != ?', (day.isoformat(), g.user['id']))
+                if r['slot'] in open_slots]
+        taken = [name for name in open_slots if name in others]
+        if booked:
+            note = f' ({", ".join(taken)} {"war" if len(taken) == 1 else "waren"} schon vergeben)' if taken else ''
+            flash(f'Gebucht: {fmt_day(day)} · {slot_list(booked)}{note}', 'ok')
+        elif taken:
+            flash(f'Am {fmt_day(day)} ist nichts mehr frei.', 'warn')
+        else:
+            flash(f'{fmt_day(day)} ist schon für dich gebucht.', 'ok')
     return back_to_calendar()
 
 
-@bp.app_template_filter('slot_time')
-def slot_time_filter(slot_name):
-    return slots.slot_time(slot_name)
+def cancel_reservations(ids):
+    """Cancel the given reservations: 404 if one is missing, 403 if one isn't yours (unless admin)."""
+    con = get_db()
+    rows = con.execute(f'SELECT * FROM reservations WHERE id IN ({", ".join("?" * len(ids))})', ids).fetchall()
+    if len(rows) != len(ids):
+        abort(404)
+    if not g.user['is_admin'] and any(r['user_id'] != g.user['id'] for r in rows):
+        abort(403)
+    current = slots.now()
+    rows = [r for r in rows if slot_bounds(parse_day(r['day']), r['slot'])[1] > current]
+    if not rows:
+        flash('Vergangene Buchungen können nicht storniert werden.', 'warn')
+        return
+    with con:
+        con.executemany('DELETE FROM reservations WHERE id = ?', [(r['id'],) for r in rows])
+    by_day = {}
+    for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
+        by_day.setdefault(r['day'], []).append(r['slot'])
+    flash('Storniert: ' + '; '.join(f'{fmt_day(parse_day(d))} · {slot_list(names)}' for d, names in by_day.items()),
+          'ok')
+
+
+@bp.route('/cancel/<int:rid>', methods=['POST'])
+@login_required
+def cancel(rid):
+    cancel_reservations([rid])
+    return back_to_calendar()
+
+
+@bp.route('/cancel', methods=['POST'])
+@login_required
+def cancel_many():
+    """Cancel a block of bookings at once (form field `id`, repeated)."""
+    ids = sorted(set(request.form.getlist('id', type=int)))
+    if not ids:
+        abort(400)
+    cancel_reservations(ids)
+    return back_to_calendar()
