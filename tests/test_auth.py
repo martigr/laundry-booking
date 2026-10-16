@@ -49,14 +49,20 @@ def test_profile(client, query, login, csrf):
     t = login('bob')
     client.post('/profile', data={'action': 'name', 'display_name': 'Bob 2. OG', 'csrf_token': t})
     client.post('/profile', data={'action': 'password', 'old_password': 'wrong',
-                                  'new_password': 'newsecret', 'csrf_token': t})
+                                  'new_password': 'newsecret', 'new_password2': 'newsecret', 'csrf_token': t})
     client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
-                                  'new_password': 'short', 'csrf_token': t})
+                                  'new_password': 'short', 'new_password2': 'short', 'csrf_token': t})
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
+                                  'new_password': 'newsecret', 'new_password2': 'newsecreT', 'csrf_token': t})
+    assert 'Die neuen Passwörter stimmen nicht überein.' in client.get('/profile').get_data(as_text=True)
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
+                                  'new_password': 'newsecret', 'csrf_token': t})  # repetition missing
     assert query("SELECT display_name FROM users WHERE username = 'bob'") == [('Bob 2. OG',)]
     t = login('bob', 'secret123')  # old password still valid
 
+    assert 'name="new_password2"' in client.get('/profile').get_data(as_text=True)
     client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
-                                  'new_password': 'newsecret', 'csrf_token': t})
+                                  'new_password': 'newsecret', 'new_password2': 'newsecret', 'csrf_token': t})
     client.post('/logout', data={'csrf_token': csrf()})
     login('bob', 'newsecret')
     assert client.get('/').status_code == 200

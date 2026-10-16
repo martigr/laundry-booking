@@ -38,6 +38,14 @@
           <div class="tag">{{ 'HEUTE' if d.is_today }}</div>
         </div>
         {% for c in d.cells %}{{ slot_cell(c) }}{% endfor %}
+        {% if d.book_day %}
+        <form method="post" action="{{ url_for('bookings.book_day') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="day" value="{{ d.date.isoformat() }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <button type="submit" class="day-book" title="Alle freien Slots an diesem Tag buchen" aria-label="{{ d.date.isoformat() }} {{ d.book_day }} buchen">{{ d.book_day }}</button>
+        </form>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -52,7 +60,7 @@
       </div>
       {% if running %}
       <div class="who">{{ 'Du' if running.mine else running.res['display_name'] }}</div>
-      <div class="meta">{{ running.res['slot'] }} · bis {{ running.end.strftime('%H:%M') }}</div>
+      <div class="meta">{{ running.name }} · bis {{ running.end.strftime('%H:%M') }}</div>
       <div class="bar"><div style="width: {{ running.progress }}%"></div></div>
       {% else %}
       <div class="who">Niemand gebucht</div>
@@ -69,11 +77,12 @@
         {% for u in upcoming %}
         <li>
           <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
-          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.slot }} · {{ u.slot|slot_time }}</span></div>
-          <form method="post" action="{{ url_for('bookings.cancel', rid=u.id) }}">
+          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.name }} · {{ u.time }}</span></div>
+          <form method="post" action="{{ url_for('bookings.cancel_many') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% for id in u.ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
             <input type="hidden" name="next" value="{{ request.full_path }}">
-            <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.slot }} stornieren">Stornieren</button>
+            <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.name }} stornieren">Stornieren</button>
           </form>
         </li>
         {% endfor %}

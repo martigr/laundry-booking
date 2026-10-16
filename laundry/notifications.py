@@ -86,26 +86,40 @@ def _footer(user_id, kind, what):
             f'Einstellungen: {link("/profile")}\n')
 
 
-def queue_freed_slot(con, reservation_id, day, slot, cancelled_by):
-    """A booking was cancelled: tell everyone who wants to know about freed slots."""
+def queue_freed_slots(con, freed, cancelled_by):
+    """Bookings were cancelled: tell everyone who wants to know about freed slots.
+
+    `freed` is a list of (reservation_id, day, slot). Subscribers get one mail per day,
+    so cancelling a whole day doesn't send three mails.
+    """
     if not mail.is_configured():
         return
-    start = slot_bounds(day, slot)[0]
     now = slots.now()
-    if not now < start <= now + FREED_WINDOW:
+    by_day = {}
+    for rid, day, slot in freed:
+        start = slot_bounds(day, slot)[0]
+        if now < start <= now + FREED_WINDOW:
+            by_day.setdefault(day, []).append((rid, slot, start))
+    if not by_day:
         return
     users = con.execute("""
         SELECT id, display_name, email FROM users
         WHERE notify_freed = 1 AND email IS NOT NULL AND email != '' AND id != ?
     """, (cancelled_by,)).fetchall()
-    for u in users:
-        body = (f'Hallo {u["display_name"]}\n\n'
-                f'{fmt_day(day)}, {slot} ({slot_time(slot)} Uhr) ist wieder frei.\n'
-                f'Jetzt buchen: {link("/?week=" + day.isoformat())}\n\n'
-                f'Wer zuerst bucht, wäscht.\n'
-                + _footer(u['id'], 'freed', '„Slot frei geworden“'))
-        _queue(con, f'freed:{reservation_id}:{u["id"]}', u['email'],
-               f'Waschküche: {fmt_day(day)} {slot} ist frei', body, expires_at=start)
+    for day, entries in sorted(by_day.items()):
+        entries.sort(key=lambda e: e[2])
+        names = [slot for _, slot, _ in entries]
+        lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
+        verb = 'ist' if len(names) == 1 else 'sind'
+        for u in users:
+            body = (f'Hallo {u["display_name"]}\n\n'
+                    f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
+                    f'Jetzt buchen: {link("/?week=" + day.isoformat())}\n\n'
+                    f'Wer zuerst bucht, wäscht.\n'
+                    + _footer(u['id'], 'freed', '„Slot frei geworden“'))
+            _queue(con, f'freed:{entries[0][0]}:{u["id"]}', u['email'],
+                   f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei', body,
+                   expires_at=entries[-1][2])
 
 
 def queue_due_reminders(con):

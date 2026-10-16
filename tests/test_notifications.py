@@ -98,6 +98,21 @@ def test_freed_slot_notifies_subscribers(app, client, login, mailbox, query):
     assert 'https://wk.test/?week=2026-10-16' in mailbox[0][2]
 
 
+def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
+    t = login('bob')
+    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    ids = [rid for rid, in query('SELECT id FROM reservations')]
+    assert len(ids) == 3
+    client.post('/cancel', data={'id': ids, 'csrf_token': t})
+
+    run(app)
+    assert len(mailbox) == 1
+    to, subject, body = mailbox[0]
+    assert subject == 'Waschküche: Fr 16. Okt. Vormittag + Nachmittag + Abend sind frei'
+    assert '- Vormittag (07:00 – 12:00 Uhr)' in body and '- Abend (17:00 – 22:00 Uhr)' in body
+
+
 def test_unsubscribe_link(app, client, login, mailbox, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', 60, freed=True)
     t = login('bob')

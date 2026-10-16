@@ -90,6 +90,8 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 }
 .field input:focus, .btn:focus-visible, .slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: 13px; color: var(--muted); }
+.field-error { font-size: 13px; font-weight: 600; color: var(--danger); }
+.field-error:empty { display: none; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-2); min-height: 44px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 
@@ -129,6 +131,9 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .slot.taken.cancelable { cursor: pointer; }
 .slot.taken.past, .slot.past, .slot.locked { background: var(--subtle); border-color: var(--taken); color: var(--faint); }
 .slot.running { box-shadow: inset 0 0 0 2px var(--warm); }
+.day-book { width: 100%; min-height: 44px; border-radius: 12px; border: 1.5px dashed #9AA6B2; background: var(--subtle); color: var(--accent-ink); font-size: 13px; font-weight: 700; cursor: pointer; }
+.day-book:hover { background: var(--accent-soft); border-style: solid; border-color: var(--accent); }
+.day-book:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .slot .s-hover, .slot .t-short { display: none; }
 .slot.cancelable:hover .s-meta { display: none; }
 .slot.cancelable:hover .s-hover { display: block; font-size: 12px; }
@@ -209,6 +214,7 @@ td.actions form { display: inline; margin: 0 0 0 12px; }
   .slot .s-meta { font-size: 11px; }
   .slot .t-long { display: none; }
   .slot .t-short { display: inline; }
+  .day-book { grid-column: 2 / -1; min-height: 44px; font-size: 12px; }
   .month { gap: 3px; padding: 8px; }
   .mday { min-height: 64px; padding: 5px; }
   .pill { font-size: 0; height: 6px; padding: 0; border-radius: 3px; }

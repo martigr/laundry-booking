@@ -55,6 +55,11 @@
       <input type="password" id="new_password" name="new_password" autocomplete="new-password" minlength="{{ min_pw }}" required>
       <span class="hint">Mindestens {{ min_pw }} Zeichen.</span>
     </div>
+    <div class="field">
+      <label for="new_password2">Neues Passwort wiederholen</label>
+      <input type="password" id="new_password2" name="new_password2" autocomplete="new-password" required aria-describedby="pw-mismatch">
+      <span class="field-error" id="pw-mismatch" aria-live="polite"></span>
+    </div>
     <div><button type="submit" class="btn btn-dark">Passwort ändern</button></div>
   </form>
 
@@ -63,4 +68,19 @@
     <button type="submit" class="btn" style="width:100%">Abmelden</button>
   </form>
 </div>
+<script>
+  // Show a mismatch while typing; profile.index() checks it again on the server
+  (function () {
+    var pw = document.getElementById('new_password');
+    var again = document.getElementById('new_password2');
+    var msg = document.getElementById('pw-mismatch');
+    function check() {
+      var text = again.value && again.value !== pw.value ? 'Die Passwörter stimmen nicht überein.' : '';
+      again.setCustomValidity(text);
+      msg.textContent = text;
+    }
+    pw.addEventListener('input', check);
+    again.addEventListener('input', check);
+  })();
+</script>
 {% endblock %}
