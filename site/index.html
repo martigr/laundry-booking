@@ -80,13 +80,12 @@
   section h2 { font-size: 1.7rem; letter-spacing: -0.01em; margin: 0 0 8px; }
   section p.sub { color: var(--muted); margin: 0 0 28px; max-width: 65ch; }
 
-  .slots { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 28px; }
-  .slot { background: var(--accent-soft); color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: .95rem; }
-  .slot b { font-weight: 650; }
 
   .features { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; }
-  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; }
+  .icon { width: 32px; height: 32px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .card p { margin: 0; color: var(--ink-2); font-size: .97rem; }
 
   .gallery { display: grid; gap: 16px; grid-template-columns: 1fr; }
@@ -147,18 +146,13 @@
     <div class="wrap">
       <h2>Simple on purpose</h2>
       <p class="sub">No quotas, no app store, no accounts per person. One login per household, a German user interface, and it runs on a single small server.</p>
-      <div class="slots" aria-label="Daily slots">
-        <span class="slot"><b>Vormittag</b> 07–12</span>
-        <span class="slot"><b>Nachmittag</b> 12–17</span>
-        <span class="slot"><b>Abend</b> 17–22</span>
-      </div>
       <div class="features">
-        <div class="card"><h3>One click to book</h3><p>Click a free slot to book it, click your own booking to cancel it. "Ganzer Tag" books every free slot of a day at once.</p></div>
-        <div class="card"><h3>Week and month view</h3><p>The week calendar is the default; the month overview shows the bigger picture. Both work well on phones.</p></div>
-        <div class="card"><h3>At a glance</h3><p>A "now in the laundry room" card, the next free slot and your upcoming bookings, with adjacent slots shown as one block.</p></div>
-        <div class="card"><h3>Mail reminders</h3><p>Optional per user: a reminder before your booking, a note when a slot becomes free, and password reset. One-click unsubscribe.</p></div>
-        <div class="card"><h3>Minimal admin area</h3><p>Create and delete households, reset passwords, set how many weeks ahead people can book, cancel any booking.</p></div>
-        <div class="card"><h3>Small and safe</h3><p>Flask and SQLite, no JavaScript framework, no external CDNs. CSRF protection on every form and an unprivileged Docker container.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8l4.8 12 1.9-5.3L20 12.8z"/><path d="M4.5 4.5l1.5 1.5M8 3v2.2M3 8h2.2"/></svg></span>One click to book</h3><p>Click a free slot to book it, click your own booking to cancel it. "Ganzer Tag" books every free slot of a day at once.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2"/></svg></span>Week and month view</h3><p>The week calendar is the default; the month overview shows the bigger picture. Both work well on phones.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>At a glance</h3><p>A "now in the laundry room" card, the next free slot and your upcoming bookings, with adjacent slots shown as one block.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/></svg></span>Mail reminders</h3><p>Optional per user: a reminder before your booking, a note when a slot becomes free, and password reset. One-click unsubscribe.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="17" cy="9.5" r="2.3"/><path d="M15.5 14.7c2.4-.3 4.4.9 5 3.8"/></svg></span>Minimal admin area</h3><p>Create and delete households, reset passwords, set how many weeks ahead people can book, cancel any booking.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></svg></span>Small and safe</h3><p>Flask and SQLite, no JavaScript framework, no external CDNs. CSRF protection on every form and an unprivileged Docker container.</p></div>
       </div>
     </div>
   </section>
