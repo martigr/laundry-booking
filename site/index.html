@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laundry Booking</title>
+<meta name="description" content="A small self-hosted web app for booking the shared washing machine in an apartment building.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231D5FD1'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='6' y='4' width='12' height='16' rx='2'/%3E%3Ccircle cx='12' cy='13' r='3.5'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #F4F6F8;
+    --surface: #FFFFFF;
+    --border: #E2E6EB;
+    --ink: #14202B;
+    --ink-2: #3E4955;
+    --muted: #5B6672;
+    --accent: #1D5FD1;
+    --accent-ink: #174BA6;
+    --accent-soft: #E6EEFB;
+    --warm: #FB923C;
+    --code-bg: #14202B;
+    --code-ink: #E6EAF0;
+    --radius: 18px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F151C;
+      --surface: #17202A;
+      --border: #26313D;
+      --ink: #E8EDF2;
+      --ink-2: #C3CCD6;
+      --muted: #94A0AD;
+      --accent: #6B9BF0;
+      --accent-ink: #8FB3F4;
+      --accent-soft: #1A2A44;
+      --code-bg: #0A0F14;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F151C; --surface: #17202A; --border: #26313D; --ink: #E8EDF2; --ink-2: #C3CCD6;
+    --muted: #94A0AD; --accent: #6B9BF0; --accent-ink: #8FB3F4; --accent-soft: #1A2A44;
+    --code-bg: #0A0F14; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); line-height: 1.55;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: var(--accent); }
+  a:hover { color: var(--accent-ink); }
+  img { max-width: 100%; height: auto; display: block; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 700px) { .wrap { padding: 0 24px; } }
+
+  header.top { background: var(--surface); border-bottom: 1px solid var(--border); }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 12px; padding-bottom: 12px; }
+  .brand { white-space: nowrap; display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
+  .brand-mark { width: 40px; height: 40px; border-radius: 12px; background: #1D5FD1; display: flex; align-items: center; justify-content: center; flex: none; }
+  nav.links { display: flex; gap: 20px; font-size: .95rem; }
+  nav.links a { color: var(--ink-2); text-decoration: none; }
+  nav.links a:hover { color: var(--accent); }
+  @media (max-width: 560px) { nav.links .opt { display: none; } nav.links { gap: 14px; } }
+
+  .hero { padding: 56px 0 32px; }
+  .hero h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 18ch; }
+  .hero p.lead { font-size: 1.15rem; color: var(--ink-2); max-width: 60ch; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-block; padding: 11px 20px; border-radius: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+  .btn.primary { background: #1D5FD1; border-color: #1D5FD1; color: #fff; }
+  .btn.primary:hover { background: #174BA6; color: #fff; }
+  .btn:hover { color: var(--accent); }
+
+  .shot { margin: 40px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; box-shadow: 0 12px 40px rgba(20, 32, 43, .08); }
+  .shot img { border-radius: 12px; }
+
+  section { padding: 56px 0; }
+  section h2 { font-size: 1.7rem; letter-spacing: -0.01em; margin: 0 0 8px; }
+  section p.sub { color: var(--muted); margin: 0 0 28px; max-width: 65ch; }
+
+  .slots { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 28px; }
+  .slot { background: var(--accent-soft); color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: .95rem; }
+  .slot b { font-weight: 650; }
+
+  .features { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card p { margin: 0; color: var(--ink-2); font-size: .97rem; }
+
+  .gallery { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 800px) { .gallery { grid-template-columns: 1fr 2fr; align-items: start; } }
+  .gallery .stack { display: grid; gap: 16px; }
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; }
+  figure img { border-radius: 12px; }
+  figcaption { color: var(--muted); font-size: .9rem; padding: 8px 6px 2px; }
+
+  .steps { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .steps h3 { margin: 0 0 10px; font-size: 1.05rem; }
+  pre { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 12px; padding: 16px; overflow-x: auto; font-size: .87rem; line-height: 1.6; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre .c { color: #8B97A5; }
+  p code { background: var(--accent-soft); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
+
+  footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--muted); font-size: .92rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <span class="brand-mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2.5" width="16" height="19" rx="2.5"/><circle cx="12" cy="13.5" r="4.5"/><path d="M7.5 6h1M11 6h1"/></svg></span>
+      Laundry Booking
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a class="opt" href="#features">Features</a>
+      <a class="opt" href="#screenshots">Screenshots</a>
+      <a href="#get-started">Get started</a>
+      <a href="https://github.com/martigr/laundry-booking">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <h1>Book the shared washing machine in one click.</h1>
+      <p class="lead">
+        A small, self-hosted web app for apartment buildings. Residents see a week calendar with
+        three slots per day and book a free one with a single click. Whoever is first gets the
+        slot; if something doesn't fit, neighbours talk to each other.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="#get-started">Get started</a>
+        <a class="btn" href="https://github.com/martigr/laundry-booking">View on GitHub</a>
+      </div>
+      <div class="shot">
+        <img src="screenshots/week.png" alt="Week view with three slots per day, some booked" width="1280" height="881">
+      </div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Simple on purpose</h2>
+      <p class="sub">No quotas, no app store, no accounts per person. One login per household, a German user interface, and it runs on a single small server.</p>
+      <div class="slots" aria-label="Daily slots">
+        <span class="slot"><b>Vormittag</b> 07–12</span>
+        <span class="slot"><b>Nachmittag</b> 12–17</span>
+        <span class="slot"><b>Abend</b> 17–22</span>
+      </div>
+      <div class="features">
+        <div class="card"><h3>One click to book</h3><p>Click a free slot to book it, click your own booking to cancel it. "Ganzer Tag" books every free slot of a day at once.</p></div>
+        <div class="card"><h3>Week and month view</h3><p>The week calendar is the default; the month overview shows the bigger picture. Both work well on phones.</p></div>
+        <div class="card"><h3>At a glance</h3><p>A "now in the laundry room" card, the next free slot and your upcoming bookings, with adjacent slots shown as one block.</p></div>
+        <div class="card"><h3>Mail reminders</h3><p>Optional per user: a reminder before your booking, a note when a slot becomes free, and password reset. One-click unsubscribe.</p></div>
+        <div class="card"><h3>Minimal admin area</h3><p>Create and delete households, reset passwords, set how many weeks ahead people can book, cancel any booking.</p></div>
+        <div class="card"><h3>Small and safe</h3><p>Flask and SQLite, no JavaScript framework, no external CDNs. CSRF protection on every form and an unprivileged Docker container.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screenshots">
+    <div class="wrap">
+      <h2>Screenshots</h2>
+      <p class="sub">The interface is in German (Swiss style).</p>
+      <div class="gallery">
+        <figure>
+          <img src="screenshots/phone.png" alt="Week view on a phone" loading="lazy">
+          <figcaption>On the phone</figcaption>
+        </figure>
+        <div class="stack">
+          <figure>
+            <img src="screenshots/month.png" alt="Month overview" loading="lazy">
+            <figcaption>Month overview</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/admin.png" alt="Admin area with user list" loading="lazy">
+            <figcaption>Admin area</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/login.png" alt="Login page" loading="lazy">
+            <figcaption>Login</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="get-started">
+    <div class="wrap">
+      <h2>Get started</h2>
+      <p class="sub">Run it with Docker Compose on any small server, behind an HTTPS reverse proxy. The first admin is created from the environment; everyone else is added in the app under <em>Verwaltung</em>.</p>
+      <div class="steps">
+        <div>
+          <h3>Production (Docker Compose)</h3>
+<pre><code>git clone https://github.com/martigr/laundry-booking
+cd laundry-booking
+cp .env.example .env   <span class="c"># SECRET_KEY, admin, BASE_URL, mail</span>
+docker compose up -d --build</code></pre>
+        </div>
+        <div>
+          <h3>Try it locally</h3>
+<pre><code>python -m venv .venv &amp;&amp; . .venv/bin/activate
+pip install -r requirements-dev.txt
+flask --app laundry --debug seed-demo
+flask --app laundry --debug run
+<span class="c"># http://localhost:5000  alice / password123</span></code></pre>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:24px">Configuration, mail setup, volumes and the command line are described in the <a href="https://github.com/martigr/laundry-booking#readme">README</a>; architecture and conventions in <a href="https://github.com/martigr/laundry-booking/blob/main/docs/DEVELOPMENT.md">docs/DEVELOPMENT.md</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Laundry Booking · Flask + SQLite</span>
+    <a href="https://github.com/martigr/laundry-booking">github.com/martigr/laundry-booking</a>
+  </div>
+</footer>
+
+</body>
+</html>
