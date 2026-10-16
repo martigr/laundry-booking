@@ -32,6 +32,9 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
 - Minimal admin area: create/delete users, reset passwords, set the booking horizon;
   admins can cancel any booking
+- Mail notifications, each switched on per user in the profile: reminder before your own
+  booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
+  every mail has a one-click unsubscribe link
 - CSRF protection on all forms; German UI
 
 ## Quick start (development)
@@ -54,7 +57,20 @@ ruff check .
 pytest
 ```
 
-## Production (Docker)
+## Production (Docker Compose)
+
+```bash
+cp .env.example .env        # fill in SECRET_KEY, admin, BASE_URL and the mail settings
+docker compose up -d --build
+```
+
+This starts two containers from the same image and the same `/data` volume:
+
+- `web`: the app (Gunicorn) on port 5000
+- `notifier`: runs `flask --app laundry send-notifications --loop 60`, which queues due reminders and
+  sends all waiting mails once a minute. Without mail settings it just idles.
+
+### Plain `docker run`
 
 ```bash
 docker build -t laundry-booking .
@@ -91,6 +107,30 @@ A restart fixes the ownership again.
 
 Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"` with the same environment variables.
 
+### Mail (Infomaniak)
+
+Use a mailbox of your domain, e.g. `waschkueche@example.ch`, and set in `.env`:
+
+```
+SMTP_HOST=mail.infomaniak.com
+SMTP_PORT=587               # or 465 with SMTP_SECURITY=ssl
+SMTP_SECURITY=starttls
+SMTP_USER=waschkueche@example.ch
+SMTP_PASSWORD=...           # the mailbox password
+MAIL_FROM=waschkueche@example.ch   # the mailbox itself or one of its aliases
+BASE_URL=https://waschkueche.example.ch
+```
+
+Any other SMTP provider works the same way. Mails are queued in the database and sent by the
+`notifier`; if the mail server is unreachable they are retried (up to 5 times) and dropped once
+they are no longer relevant (e.g. a reminder after the slot started). Residents enter their address
+and choose their notifications under *Profil*; the "Passwort vergessen?" link on the login page
+only appears when mail is configured.
+
+For local development, [Mailpit](https://mailpit.axllent.org/) catches all mails in a web inbox:
+`docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`, then `SMTP_HOST=localhost SMTP_PORT=1025
+SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -102,6 +142,11 @@ Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"
 | `SESSION_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
+| `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails |
+| `SMTP_HOST`, `SMTP_PORT` | –, `587` | Mail server; mail is off while `SMTP_HOST` or `MAIL_FROM` is empty |
+| `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (port 465) or `none` (local test servers only) |
+| `SMTP_USER`, `SMTP_PASSWORD` | – | SMTP login |
+| `MAIL_FROM`, `MAIL_FROM_NAME` | –, `Waschküche` | Sender address and name |
 
 ## Command line
 
@@ -109,6 +154,7 @@ Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"
 flask --app laundry create-user <username> [--name "Display name"] [--admin]   # asks for the password
 flask --app laundry make-admin <username>
 flask --app laundry seed-demo                                                  # demo data, development only
+flask --app laundry send-notifications [--loop SECONDS]                        # queue reminders, send mails
 ```
 
 In Docker: `docker exec -it --user 1000:1000 laundry flask --app laundry create-user ...` (see *Volumes and permissions*)

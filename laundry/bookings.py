@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import slots
+from . import notifications, slots
 from .auth import login_required
 from .db import get_db
 from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bookable_day, parse_day, slot_bounds
@@ -279,6 +279,8 @@ def cancel_reservations(ids):
         return
     with con:
         con.executemany('DELETE FROM reservations WHERE id = ?', [(r['id'],) for r in rows])
+        notifications.queue_freed_slots(con, [(r['id'], parse_day(r['day']), r['slot']) for r in rows],
+                                        cancelled_by=g.user['id'])
     by_day = {}
     for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
         by_day.setdefault(r['day'], []).append(r['slot'])

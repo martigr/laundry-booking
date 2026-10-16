@@ -12,7 +12,10 @@ SCHEMA = [
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         display_name TEXT NOT NULL,
-        is_admin INTEGER NOT NULL DEFAULT 0
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        email TEXT,
+        reminder_minutes INTEGER NOT NULL DEFAULT 0,
+        notify_freed INTEGER NOT NULL DEFAULT 0
     )
     """,
     """
@@ -30,6 +33,29 @@ SCHEMA = [
         value TEXT NOT NULL
     )
     """,
+    # Outbox: mails are queued here and sent by `flask send-notifications`
+    """
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dedupe_key TEXT UNIQUE NOT NULL,
+        to_addr TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        sent_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT
+    )
+    """,
+]
+
+# Columns added after the first release: (table, column, definition). Applied by init_db()
+# to databases created before they existed.
+ADDED_COLUMNS = [
+    ('users', 'email', 'TEXT'),
+    ('users', 'reminder_minutes', 'INTEGER NOT NULL DEFAULT 0'),
+    ('users', 'notify_freed', 'INTEGER NOT NULL DEFAULT 0'),
 ]
 
 DEFAULT_SETTINGS = {'horizon_weeks': '4'}
@@ -91,6 +117,9 @@ def init_db():
         con.execute('BEGIN IMMEDIATE')
         for statement in SCHEMA:
             con.execute(statement)
+        for table, column, definition in ADDED_COLUMNS:
+            if column not in [r['name'] for r in con.execute(f'PRAGMA table_info({table})')]:
+                con.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
 
         cfg = current_app.config
         user_count = con.execute('SELECT COUNT(*) FROM users').fetchone()[0]

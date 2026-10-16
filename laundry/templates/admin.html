@@ -12,15 +12,16 @@
   <section class="card split-main" aria-labelledby="users-h">
     <h2 id="users-h">Benutzer</h2>
     <div class="table-wrap">
-      <table style="min-width:560px">
+      <table style="min-width:700px">
         <thead>
-          <tr><th>Anzeigename</th><th>Benutzername</th><th>Rolle</th><th style="text-align:right">Aktionen</th></tr>
+          <tr><th>Anzeigename</th><th>Benutzername</th><th>E-Mail</th><th>Rolle</th><th style="text-align:right">Aktionen</th></tr>
         </thead>
         <tbody>
           {% for u in users %}
           <tr>
             <td><strong>{{ u['display_name'] }}</strong></td>
             <td>{{ u['username'] }}</td>
+            <td>{% if u['email'] %}{{ u['email'] }}{% else %}<span class="hint">–</span>{% endif %}</td>
             <td>{% if u['is_admin'] %}<span class="badge admin">Admin</span>{% else %}<span class="badge">Bewohner</span>{% endif %}</td>
             <td class="actions">
               {% if u['id'] == g.user['id'] %}
@@ -51,6 +52,10 @@
       <div class="field">
         <label for="username">Benutzername</label>
         <input type="text" id="username" name="username" maxlength="{{ max_name }}" autocapitalize="none" required>
+      </div>
+      <div class="field">
+        <label for="email">E-Mail (optional)</label>
+        <input type="email" id="email" name="email" maxlength="254" autocomplete="off">
       </div>
       <div class="field">
         <label for="password">Startpasswort</label>

@@ -23,7 +23,8 @@ def index():
 def create():
     try:
         create_user(request.form.get('username'), request.form.get('password'),
-                    request.form.get('display_name'), bool(request.form.get('is_admin')))
+                    request.form.get('display_name'), bool(request.form.get('is_admin')),
+                    request.form.get('email'))
         flash(f'Benutzer „{request.form.get("display_name") or request.form.get("username")}“ angelegt.', 'ok')
     except UserError as e:
         flash(str(e), 'warn')

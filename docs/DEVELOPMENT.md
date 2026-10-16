@@ -23,7 +23,9 @@ served. Admins manage users and the booking horizon.
 laundry/                  # the application package
 ├── __init__.py           # create_app(): config, blueprints, /health, schema setup
 ├── db.py                 # connection per request, schema, init_db(), settings
-├── users.py              # create_user(), get_user*(), set_password(), UserError
+├── users.py              # create_user(), get_user*(), set_password(), clean_email(), UserError
+├── mail.py               # is_configured(), deliver(): one plain-text mail over SMTP
+├── notifications.py      # outbox: queue_*() for reminders/freed slots/password reset, run_once()
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
 ├── auth.py               # bp "auth": login/logout, CSRF, login_required/admin_required
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
@@ -38,15 +40,19 @@ laundry/                  # the application package
     ├── index.html        # week view + side cards
     ├── month.html        # month overview (links into week view)
     ├── login.html        # overrides block body (no header)
-    ├── profile.html
-    └── admin.html
+    ├── profile.html      # display name, mail notifications, password
+    ├── admin.html
+    ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
+    ├── forgot_password.html, reset_password.html, unsubscribe.html
 tests/
 ├── conftest.py           # fixtures: app, client, login, csrf, query, reservations
 ├── test_auth.py          # login, logout, CSRF, SECRET_KEY, profile
 ├── test_bookings.py      # booking rules, cancel permissions, views, escaping
 ├── test_admin.py         # admin area
-└── test_cli.py           # CLI commands, first-admin bootstrap
+├── test_cli.py           # CLI commands, first-admin bootstrap
+└── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
 docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
+docker-compose.yml        # web + notifier container, settings from .env (.env.example)
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
@@ -94,6 +100,16 @@ username      TEXT UNIQUE (lowercase)   day       TEXT  ISO date 'YYYY-MM-DD'
 password      TEXT  werkzeug hash       slot      TEXT  one of SLOTS names
 display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE CASCADE
 is_admin      INTEGER 0/1               UNIQUE (day, slot)
+email         TEXT  optional
+reminder_minutes INTEGER 0 = off
+notify_freed  INTEGER 0/1
+
+notifications (outbox)
+──────────────────────
+dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>', 'freed:<reservation id>:<user id>'
+to_addr, subject, body
+created_at, expires_at    not sent after expires_at (slot start, reset link validity)
+sent_at, attempts, last_error
 
 settings
 ────────
@@ -120,8 +136,11 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
   it one after another. It creates the schema (`CREATE TABLE IF NOT EXISTS`) and the first
   admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on an empty database. WAL mode is enabled
   once and persists in the file.
-- There are no migrations yet. Once the app holds real data, a schema change needs an
-  idempotent migration step in `init_db()` plus a test that builds the old schema.
+- Migrations: columns added after the first release are listed in `db.ADDED_COLUMNS`;
+  `init_db()` adds each one that is missing (`ALTER TABLE ... ADD COLUMN`). New tables just go
+  into `SCHEMA` (`CREATE TABLE IF NOT EXISTS`). Other changes need their own idempotent step in
+  `init_db()`. Always add a test that builds the old schema by hand
+  (`test_columns_are_added_to_an_existing_database`).
 
 ## Request flow
 
@@ -153,6 +172,9 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password, shown once |
 | `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
 | `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
+| `/passwort-vergessen` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail; same answer whether the account exists or not |
+| `/passwort-zuruecksetzen/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
+| `/abbestellen/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
 | `/health` | GET | `health` | public | Liveness probe |
 
 ### Booking rules
@@ -187,6 +209,25 @@ adjacent slots of the same day and user into one block ("Nachmittag – Abend",
 "Ganzer Tag"), both in the upcoming list (one cancel button per block) and for the
 running booking.
 
+## Mail notifications
+
+All mail goes through the `notifications` table (outbox pattern):
+
+1. Something queues a row: `bookings.cancel_reservations()` calls `queue_freed_slots()` (one mail per day and subscriber, also when a whole day is cancelled), `auth.forgot_password()`
+   calls `queue_password_reset()`, and `run_once()` calls `queue_due_reminders()`.
+   `dedupe_key` is UNIQUE and inserts use `INSERT OR IGNORE`, so a mail is queued at most once.
+2. `flask send-notifications` (`--loop 60` in the `notifier` container) runs `run_once()`: queue due
+   reminders, send unsent rows that haven't expired, retry failures up to `MAX_ATTEMPTS`, delete
+   rows older than 30 days.
+
+Why: a request never waits for the mail server, an outage only delays mails, and with several
+Gunicorn workers nothing is sent twice. Never call `mail.deliver()` from a view.
+
+Rules: reminders go out within `reminder_minutes` before the slot start; freed slots are
+announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled.
+Without `SMTP_HOST`/`MAIL_FROM` nothing is queued and the "Passwort vergessen?" link is hidden.
+Mail texts are plain text and German; links use `BASE_URL`, since the notifier has no request.
+
 ## Security
 
 - **Secret key:** required unless in debug/testing mode (`create_app` raises otherwise).
@@ -200,6 +241,9 @@ running booking.
   `onsubmit` confirm texts) use `|tojson` in a *single-quoted* attribute; `|e` is not
   safe there. `test_display_name_is_escaped` covers this.
 - **Passwords:** werkzeug hashes, minimum length `users.MIN_PASSWORD_LENGTH`.
+- **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
+  hour and stop working once the password changed; unsubscribe tokens only switch a notification
+  off and need a POST (link scanners only GET).
 - **Container:** `docker-entrypoint.sh` starts as root only to `chown` the data folder and the
   `laundry.db*` files to `PUID:PGID` (default 1000), then `exec setpriv` drops to that user
   before the app starts. With `--user` it skips the `chown`. `db.ensure_writable()` checks at
@@ -232,6 +276,7 @@ Fixtures in `tests/conftest.py`:
 | `csrf` | `csrf()` returns the CSRF token of the client's session |
 | `query` | `query(sql, *params)` returns rows as tuples |
 | `reservations` | current bookings as `(day, slot, username)` tuples |
+| `mailbox` | mails "sent" in the test as `(to, subject, body)`; `mail.deliver` is replaced, mail is configured with `BASE_URL=https://wk.test` |
 
 Add a test for every new route or rule, including the 400/403/404 paths.
 

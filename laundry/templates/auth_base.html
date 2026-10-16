@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="login">
+  <section class="login-hero">
+    <div class="brand" style="color:#fff">
+      <span class="brand-mark">{% include '_logo.html' %}</span>
+      <span class="brand-name">Waschküche</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <h1>Waschtag planen,<br>ohne Zettel an der Tür.</h1>
+      <p class="hero-extra">Sieh auf einen Blick, wann die Waschmaschine frei ist, und trag dich mit einem Klick ein. Passt es mal nicht, redet man miteinander.</p>
+    </div>
+    <div class="hero-extra" style="font-size:13px;color:#9AA6B2">Noch kein Konto? Der Admin im Haus legt es für dich an.</div>
+  </section>
+  <section class="login-main">
+    <div class="login-form">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+      <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
+      {% endfor %}
+      {% endwith %}
+      {% block form %}{% endblock %}
+    </div>
+  </section>
+</div>
+{% endblock %}
