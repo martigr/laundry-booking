@@ -90,6 +90,8 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 }
 .field input:focus, .btn:focus-visible, .slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: 13px; color: var(--muted); }
+.field-error { font-size: 13px; font-weight: 600; color: var(--danger); }
+.field-error:empty { display: none; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-2); min-height: 44px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 

@@ -13,7 +13,8 @@ served. Admins manage users and the booking horizon.
 - **Backend:** Python package `laundry/` built with an app factory and blueprints;
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
-  and practically no JavaScript (only `confirm()` dialogs)
+  and practically no JavaScript (only `confirm()` dialogs and the live password-repeat
+  check on the profile page)
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -146,7 +147,7 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
-| `/profile` | GET/POST | `profile.index` | user | `action=name` or `action=password` |
+| `/profile` | GET/POST | `profile.index` | user | `action=name`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password, shown once |

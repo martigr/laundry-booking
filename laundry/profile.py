@@ -27,6 +27,8 @@ def index():
     elif action == 'password':
         if not check_password_hash(g.user['password'], request.form.get('old_password', '')):
             flash('Das aktuelle Passwort ist falsch.', 'warn')
+        elif request.form.get('new_password', '') != request.form.get('new_password2', ''):
+            flash('Die neuen Passwörter stimmen nicht überein.', 'warn')
         else:
             try:
                 set_password(g.user['id'], request.form.get('new_password', ''))
