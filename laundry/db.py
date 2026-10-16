@@ -62,17 +62,22 @@ def ensure_writable(path):
     SQLite needs write access to the file and to its directory (journal/WAL files).
     """
     directory = os.path.dirname(os.path.abspath(path))
-    uid, gid = os.getuid(), os.getgid()
+    # No UIDs on Windows; there os.access only checks the read-only attribute
+    uid = os.getuid() if hasattr(os, 'getuid') else None
+    as_uid = f' as uid {uid}' if uid is not None else ''
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError as e:
-        raise RuntimeError(f'Cannot create the database directory {directory} as uid {uid}: {e.strerror}') from None
+        raise RuntimeError(f'Cannot create the database directory {directory}{as_uid}: {e.strerror}') from None
     for p in [directory, path, path + '-wal', path + '-shm']:
         if os.path.exists(p) and not os.access(p, os.W_OK):
+            if uid is None:
+                raise RuntimeError(f'{p} is not writable. SQLite needs write access to the database file '
+                                   f'and its directory.')
             raise RuntimeError(
                 f'{p} is not writable for uid {uid} (owned by uid {os.stat(p).st_uid}). '
                 f'SQLite needs write access to the database file and its directory. '
-                f'Fix the owner, e.g. chown -R {uid}:{gid} <folder>; in Docker see "Volumes and permissions" '
+                f'Fix the owner, e.g. chown -R {uid}:{os.getgid()} <folder>; in Docker see "Volumes and permissions" '
                 f'in the README.')
 
 

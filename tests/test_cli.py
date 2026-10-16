@@ -38,3 +38,14 @@ def test_unwritable_database_gives_clear_error(tmp_path, monkeypatch):
     monkeypatch.setattr(os, 'access', lambda path, mode: not str(path).endswith('laundry.db'))
     with pytest.raises(RuntimeError, match='laundry.db is not writable for uid'):
         create_app({'TESTING': True, 'DATABASE': str(tmp_path / 'laundry.db')})
+
+
+def test_unwritable_database_without_uids(tmp_path, monkeypatch):
+    # Windows has no os.getuid/os.getgid
+    monkeypatch.delattr(os, 'getuid')
+    monkeypatch.delattr(os, 'getgid')
+    create_app({'TESTING': True, 'DATABASE': str(tmp_path / 'laundry.db')})
+
+    monkeypatch.setattr(os, 'access', lambda path, mode: not str(path).endswith('laundry.db'))
+    with pytest.raises(RuntimeError, match=r'laundry.db is not writable\. SQLite'):
+        create_app({'TESTING': True, 'DATABASE': str(tmp_path / 'laundry.db')})

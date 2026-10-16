@@ -193,6 +193,7 @@ slot within the horizon and the user's upcoming bookings.
   before the app starts. With `--user` it skips the `chown`. `db.ensure_writable()` checks at
   startup that the database file and folder are writable and fails with a message naming the
   path, owner and fix, instead of SQLite's "unable to open database file".
+  On Windows (no `os.getuid`) the message leaves out the UID and the `chown` hint.
 
 ## Frontend
 
