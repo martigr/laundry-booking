@@ -59,6 +59,8 @@ pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
 .github/workflows/ci.yml  # ruff, pytest, shellcheck + Docker build and smoke test
+.github/workflows/pages.yml  # deploys site/ + docs/screenshots to GitHub Pages
+site/index.html           # project page (GitHub Pages), self-contained HTML/CSS
 ```
 
 ## Running locally
@@ -296,6 +298,11 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
 
 Run the Docker part locally with
 `docker build -t laundry-booking:ci . && scripts/docker-smoke-test.sh`.
+
+The project page in `site/` is published by `.github/workflows/pages.yml` on every push to `main`
+that touches `site/` or `docs/screenshots/` (or by hand via *Run workflow*). The workflow copies
+`docs/screenshots/` to `screenshots/` next to `index.html`, so retaken README screenshots show up
+there too. One-time setup: *Settings → Pages → Source: GitHub Actions*.
 
 ## Deployment
 

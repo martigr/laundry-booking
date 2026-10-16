@@ -1,6 +1,7 @@
 # Laundry Booking
 
 A small web app for booking the shared washing machine in an apartment building.
+Project page: https://martigr.github.io/laundry-booking/
 Residents see a week calendar with three slots per day and book a free slot with one click.
 Whoever is first gets the slot; if something doesn't fit, people talk to each other.
 
@@ -163,3 +164,4 @@ In Docker: `docker exec -it --user 1000:1000 laundry flask --app laundry create-
 
 Architecture, data model, routes, security notes and conventions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
+The project page lives in `site/` and is deployed to GitHub Pages by `.github/workflows/pages.yml`.
