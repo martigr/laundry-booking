@@ -13,8 +13,8 @@ served. Admins manage users and the booking horizon.
 - **Backend:** Python package `laundry/` built with an app factory and blueprints;
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
-  and practically no JavaScript (only `confirm()` dialogs and the live password-repeat
-  check on the profile page)
+  and practically no JavaScript (only the confirmation dialog in `static/confirm.js`
+  and the live password-repeat check on the profile page)
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -33,8 +33,9 @@ laundry/                  # the application package
 ├── admin.py              # bp "admin": users, settings
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo
 ├── static/style.css      # all styles (design tokens as CSS variables)
+├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
 └── templates/
-    ├── base.html         # layout: header, nav, flash messages
+    ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
     ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
     ├── _logo.html        # inline SVG logo
     ├── index.html        # week view + side cards
@@ -237,9 +238,10 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   since the app has no other use for WTForms.)
 - **Sessions:** `session.clear()` on login (against session fixation) and logout;
   HttpOnly and SameSite=Lax cookies; Secure via `SESSION_COOKIE_SECURE`.
-- **Escaping:** Jinja autoescape covers HTML. For values inside inline JS (the
-  `onsubmit` confirm texts) use `|tojson` in a *single-quoted* attribute; `|e` is not
-  safe there. `test_display_name_is_escaped` covers this.
+- **Escaping:** Jinja autoescape covers HTML. Confirmation texts go into plain `data-confirm*`
+  attributes (autoescaped) and `confirm.js` inserts them with `textContent`, so no inline JS is
+  needed. Should you ever put values into inline JS, use `|tojson` in a *single-quoted*
+  attribute; `|e` is not safe there. `test_display_name_is_escaped` covers this.
 - **Passwords:** werkzeug hashes, minimum length `users.MIN_PASSWORD_LENGTH`.
 - **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
@@ -260,6 +262,10 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 - System font stack, no external requests (no CDNs, no Google Fonts).
 - Touch targets are at least 44 px; use real `<button>`/`<a>` elements and
   `aria-label` on icon-only buttons.
+- Confirmations: give the form `data-confirm="Frage"` and optionally `data-confirm-title`,
+  `data-confirm-ok` (button text) and `data-confirm-danger` (red button). `confirm.js` shows
+  the `<dialog>` from `base.html`; without JavaScript the form submits directly, so the
+  permission check belongs in the view as always. Never use `window.confirm()` directly.
 - The README screenshots live in `docs/screenshots/` (desktop 1280 px wide, phone 390 px
   at 2x). Retake them when the UI changes visibly, with demo data and a daytime clock so
   the "running" slot is visible.

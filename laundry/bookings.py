@@ -38,6 +38,7 @@ def build_cell(day, slot_name, res, current, last_day):
     return {
         'day': day.isoformat(),
         'slot': slot_name,
+        'label': f'{slots.fmt_day(day)} · {slot_name}',
         'time': slots.slot_time(slot_name),
         'short': slots.slot_time_short(slot_name),
         'past': past,

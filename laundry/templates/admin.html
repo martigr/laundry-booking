@@ -27,11 +27,11 @@
               {% if u['id'] == g.user['id'] %}
               <span class="hint">Du</span>
               {% else %}
-              <form method="post" action="{{ url_for('admin.reset_password', uid=u['id']) }}" onsubmit='return confirm({{ ("Neues Passwort für " ~ u["display_name"] ~ " erzeugen?")|tojson }})'>
+              <form method="post" action="{{ url_for('admin.reset_password', uid=u['id']) }}" data-confirm-title="Passwort zurücksetzen?" data-confirm="{{ u['display_name'] }} erhält ein neues, zufälliges Passwort. Das alte funktioniert danach nicht mehr." data-confirm-ok="Neues Passwort erzeugen">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="linklike">Passwort zurücksetzen</button>
               </form>
-              <form method="post" action="{{ url_for('admin.delete', uid=u['id']) }}" onsubmit='return confirm({{ (u["display_name"] ~ " und alle Buchungen löschen?")|tojson }})'>
+              <form method="post" action="{{ url_for('admin.delete', uid=u['id']) }}" data-confirm-title="Benutzer löschen?" data-confirm="{{ u['display_name'] }} und alle Buchungen werden endgültig gelöscht. Das lässt sich nicht rückgängig machen." data-confirm-ok="Löschen" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="linklike danger">Löschen</button>
               </form>

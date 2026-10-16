@@ -228,3 +228,17 @@ td.actions form { display: inline; margin: 0 0 0 12px; }
   .mainnav a { padding: 10px 6px; }
   .userbox form { display: none; } /* logout moves to the profile page */
 }
+
+/* --- Confirmation dialog (static/confirm.js) -------------------------- */
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { background: #912018; color: #fff; }
+.modal { width: min(420px, calc(100% - 32px)); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 24px 60px rgba(20, 32, 43, 0.25); }
+.modal::backdrop { background: rgba(20, 32, 43, 0.45); }
+.modal[open] { animation: modal-in 0.16s ease-out; }
+.modal-body { margin: 0; padding: 24px; display: flex; flex-direction: column; gap: 10px; }
+.modal-body h2 { font-size: 19px; font-weight: 800; }
+.modal-body p { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
+@media (max-width: 480px) { .modal-actions .btn { flex: 1 1 auto; } }

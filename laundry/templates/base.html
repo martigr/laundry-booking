@@ -41,6 +41,17 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+<dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+  <form method="dialog" class="modal-body">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-text"></p>
+    <div class="modal-actions">
+      <button type="submit" value="cancel" class="btn">Abbrechen</button>
+      <button type="submit" value="ok" id="confirm-ok" class="btn btn-primary">OK</button>
+    </div>
+  </form>
+</dialog>
+<script src="{{ url_for('static', filename='confirm.js') }}" defer></script>
 {% endblock %}
 </body>
 </html>

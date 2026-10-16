@@ -23,6 +23,15 @@ def test_create_and_delete_user(client, query, login):
     assert query('SELECT COUNT(*) FROM reservations') == [(0,)]
 
 
+def test_delete_and_reset_ask_for_confirmation(client, login):
+    login('alice')
+    page = client.get('/admin').get_data(as_text=True)
+    assert 'data-confirm-title="Benutzer löschen?"' in page
+    assert 'data-confirm="Bob und alle Buchungen werden endgültig gelöscht.' in page
+    assert 'data-confirm-title="Passwort zurücksetzen?"' in page
+    assert 'onsubmit=' not in page
+
+
 def test_cannot_delete_self(client, query, login):
     t = login('alice')
     client.post('/admin/users/1/delete', data={'csrf_token': t})

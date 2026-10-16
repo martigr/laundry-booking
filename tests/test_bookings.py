@@ -87,6 +87,16 @@ def test_display_name_is_escaped(client, login):
     assert "');alert(1)" not in client.get('/admin').get_data(as_text=True)
 
 
+def test_cancel_confirmation_only_for_others_bookings(client, login):
+    t = login('bob')
+    book(client, t, '2026-10-17', 'Abend')
+    assert 'data-confirm' not in client.get('/?week=2026-10-17').get_data(as_text=True)
+    login('alice')
+    page = client.get('/?week=2026-10-17').get_data(as_text=True)
+    assert 'data-confirm="Die Buchung von Bob (Sa 17. Okt. · Abend) wird storniert."' in page
+    assert 'id="confirm-dialog"' in page
+
+
 def book_day(client, token, day):
     return client.post('/book-day', data={'day': day, 'csrf_token': token, 'next': '/?week=' + day})
 

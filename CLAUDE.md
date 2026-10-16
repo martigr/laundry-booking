@@ -34,7 +34,8 @@ flask --app laundry --debug run              # dev server on :5000
 - Every POST form needs `<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`.
 - Put booking and permission rules in the view functions, not only in templates.
   Compute cell state in `bookings.build_cell()`, not in Jinja.
-- Values inside inline JS attributes: `|tojson` in a single-quoted attribute, never `|e`.
+- Confirmations via `data-confirm*` attributes on the form (styled dialog in `static/confirm.js`),
+  not `confirm()`. Values inside inline JS attributes: `|tojson` in a single-quoted attribute, never `|e`.
 - Schema lives in `db.SCHEMA`/`init_db()`. New columns on existing tables go into `db.ADDED_COLUMNS`
   (added on startup if missing); other changes need an idempotent step in `init_db()`; always with a
   test that builds the old schema.
