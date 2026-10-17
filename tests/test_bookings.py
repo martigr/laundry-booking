@@ -44,7 +44,7 @@ def test_cancel_permissions(app, client, query, reservations, login):
 
     with app.app_context():
         from laundry.users import create_user
-        create_user('carl', 'secret123', 'Carl')
+        create_user('carl', 'secret1234', 'Carl')
     t = login('carl')
     assert client.post(f'/cancel/{second}', data={'csrf_token': t}).status_code == 403
     assert client.post('/cancel/999', data={'csrf_token': t}).status_code == 404
@@ -171,7 +171,7 @@ def test_cancel_block(app, client, query, reservations, login):
 
     with app.app_context():
         from laundry.users import create_user
-        create_user('carl', 'secret123', 'Carl')
+        create_user('carl', 'secret1234', 'Carl')
     t = login('carl')
     assert client.post('/cancel', data={'id': ids, 'csrf_token': t}).status_code == 403
     assert client.post('/cancel', data={'id': ids + [999], 'csrf_token': t}).status_code == 404

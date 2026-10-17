@@ -5,6 +5,9 @@ import sqlite3
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
 
+# Shortest allowed password: for users.check_password() and the first admin in init_db()
+MIN_PASSWORD_LENGTH = 10
+
 SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS users (
@@ -15,7 +18,8 @@ SCHEMA = [
         is_admin INTEGER NOT NULL DEFAULT 0,
         email TEXT,
         reminder_minutes INTEGER NOT NULL DEFAULT 0,
-        notify_freed INTEGER NOT NULL DEFAULT 0
+        notify_freed INTEGER NOT NULL DEFAULT 0,
+        session_version INTEGER NOT NULL DEFAULT 0
     )
     """,
     """
@@ -48,6 +52,14 @@ SCHEMA = [
         last_error TEXT
     )
     """,
+    # Failed logins of the last minutes, for auth.login_blocked(); key is 'user:<name>' or 'ip:<addr>'
+    """
+    CREATE TABLE IF NOT EXISTS login_failures (
+        key TEXT NOT NULL,
+        at TEXT NOT NULL
+    )
+    """,
+    'CREATE INDEX IF NOT EXISTS login_failures_key ON login_failures (key, at)',
 ]
 
 # Columns added after the first release: (table, column, definition). Applied by init_db()
@@ -56,6 +68,7 @@ ADDED_COLUMNS = [
     ('users', 'email', 'TEXT'),
     ('users', 'reminder_minutes', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'notify_freed', 'INTEGER NOT NULL DEFAULT 0'),
+    ('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0'),
 ]
 
 DEFAULT_SETTINGS = {'horizon_weeks': '4'}
@@ -124,6 +137,8 @@ def init_db():
         cfg = current_app.config
         user_count = con.execute('SELECT COUNT(*) FROM users').fetchone()[0]
         if user_count == 0 and cfg['ADMIN_USERNAME'] and cfg['ADMIN_PASSWORD']:
+            if len(cfg['ADMIN_PASSWORD']) < MIN_PASSWORD_LENGTH:
+                raise RuntimeError(f'ADMIN_PASSWORD must be at least {MIN_PASSWORD_LENGTH} characters long.')
             con.execute(
                 'INSERT INTO users (username, password, display_name, is_admin) VALUES (?, ?, ?, 1)',
                 (cfg['ADMIN_USERNAME'], generate_password_hash(cfg['ADMIN_PASSWORD']), cfg['ADMIN_USERNAME']))

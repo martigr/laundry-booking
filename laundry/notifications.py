@@ -22,6 +22,7 @@ REMINDER_CHOICES = [
 ]
 FREED_WINDOW = timedelta(days=7)   # only announce freed slots that start within this window
 RESET_VALID = timedelta(hours=1)
+RESET_INTERVAL = timedelta(minutes=15)  # at most one reset mail per user in this time
 MAX_ATTEMPTS = 5
 KEEP_SENT = timedelta(days=30)
 
@@ -149,7 +150,11 @@ def queue_due_reminders(con):
 
 
 def queue_password_reset(con, user):
+    """Queue a reset link, unless one was queued lately (anyone can ask, so this stops mail floods)."""
     now = slots.now()
+    if con.execute('SELECT 1 FROM notifications WHERE dedupe_key LIKE ? AND created_at > ?',
+                   (f'reset:{user["id"]}:%', (now - RESET_INTERVAL).isoformat(timespec='seconds'))).fetchone():
+        return
     body = (f'Hallo {user["display_name"]}\n\n'
             f'Für dein Konto „{user["username"]}“ wurde ein neues Passwort angefordert.\n'
             f'Über diesen Link setzt du es (gültig für 1 Stunde):\n\n'

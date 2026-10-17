@@ -40,11 +40,17 @@ def slot_time_short(slot_name):
     return f'{start.hour}–{end.hour} Uhr'
 
 
+# Days accepted from requests; far outside, the calendar's date arithmetic would overflow
+MIN_DAY, MAX_DAY = date(2000, 1, 1), date(2999, 12, 31)
+
+
 def parse_day(value):
+    """The date of an ISO string, or None if it isn't one or lies outside MIN_DAY..MAX_DAY."""
     try:
-        return date.fromisoformat(value)
+        day = date.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+    return day if MIN_DAY <= day <= MAX_DAY else None
 
 
 def fmt_day(d):

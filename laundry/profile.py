@@ -2,7 +2,7 @@
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash
 
-from .auth import login_required
+from .auth import keep_session, login_required
 from .db import get_db
 from .notifications import REMINDER_CHOICES, read_unsubscribe_token
 from .users import MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, UserError, clean_email, set_password
@@ -55,7 +55,8 @@ def index():
         else:
             try:
                 set_password(g.user['id'], request.form.get('new_password', ''))
-                flash('Passwort geändert.', 'ok')
+                keep_session()
+                flash('Passwort geändert. Auf anderen Geräten bist du jetzt abgemeldet.', 'ok')
             except UserError as e:
                 flash(str(e), 'warn')
     return redirect(url_for('profile.index'))

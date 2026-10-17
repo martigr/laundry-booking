@@ -144,8 +144,8 @@ def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
     path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
 
     assert client.get(path).status_code == 200
-    client.post(path, data={'password': 'brandnew1', 'csrf_token': csrf()})
-    login('bob', 'brandnew1')
+    client.post(path, data={'password': 'brandnew12', 'csrf_token': csrf()})
+    login('bob', 'brandnew12')
     assert client.get('/').status_code == 200
     assert client.get(path).status_code == 400  # single use
 
@@ -189,9 +189,9 @@ def test_without_mail_config_nothing_is_queued(tmp_path, monkeypatch):
 
 def test_admin_creates_user_with_email(client, login, query):
     t = login('alice')
-    client.post('/admin/users', data={'username': 'carl', 'password': 'secret123', 'email': 'carl@example.ch',
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret1234', 'email': 'carl@example.ch',
                                       'csrf_token': t})
-    client.post('/admin/users', data={'username': 'dora', 'password': 'secret123', 'email': 'no-at-sign',
+    client.post('/admin/users', data={'username': 'dora', 'password': 'secret1234', 'email': 'no-at-sign',
                                       'csrf_token': t})
     assert query("SELECT username, email FROM users WHERE username IN ('carl', 'dora')") == \
         [('carl', 'carl@example.ch')]
@@ -209,8 +209,9 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     create_app({'TESTING': True, 'DATABASE': str(path)})
     create_app({'TESTING': True, 'DATABASE': str(path)})  # idempotent
     con = sqlite3.connect(path)
-    assert con.execute('SELECT username, email, reminder_minutes, notify_freed FROM users').fetchall() == \
-        [('bob', None, 0, 0)]
+    assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version FROM users'
+                       ).fetchall() == [('bob', None, 0, 0, 0)]
+    assert con.execute('SELECT COUNT(*) FROM login_failures').fetchone() == (0,)
 
 
 @pytest.mark.parametrize('security', ['starttls', 'ssl', 'none'])

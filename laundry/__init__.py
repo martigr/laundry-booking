@@ -3,6 +3,7 @@ import os
 from datetime import timedelta
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 def create_app(test_config=None):
@@ -18,6 +19,12 @@ def create_app(test_config=None):
         SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', '0') == '1',
         SESSION_COOKIE_SAMESITE=os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax'),
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+        # Forms are tiny; larger requests get 413 instead of filling memory
+        MAX_CONTENT_LENGTH=64 * 1024,
+        # Number of reverse proxies in front of the app whose X-Forwarded-For/-Proto headers to trust
+        TRUSTED_PROXIES=int(os.environ.get('TRUSTED_PROXIES', '0')),
+        # Who to contact about security problems of this instance, shown in /.well-known/security.txt
+        SECURITY_CONTACT=os.environ.get('SECURITY_CONTACT'),
         # Mail (e.g. Infomaniak: mail.infomaniak.com, 587/starttls or 465/ssl)
         SMTP_HOST=os.environ.get('SMTP_HOST'),
         SMTP_PORT=int(os.environ.get('SMTP_PORT', '587')),
@@ -40,13 +47,19 @@ def create_app(test_config=None):
         app.config['SECRET_KEY'] = 'dev-only-secret'
         app.logger.warning('Using the development SECRET_KEY')
 
-    from . import admin, auth, bookings, cli, db, mail, profile
+    if app.config['TRUSTED_PROXIES']:
+        # Client address (login throttling, logs) and https (HSTS) as seen by the proxy
+        n = app.config['TRUSTED_PROXIES']
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n)
+
+    from . import admin, auth, bookings, cli, db, mail, profile, security
 
     db.ensure_writable(app.config['DATABASE'])
 
     db.init_app(app)
     auth.init_app(app)
     cli.init_app(app)
+    security.init_app(app)
     app.register_blueprint(auth.bp)
     app.register_blueprint(bookings.bp)
     app.register_blueprint(profile.bp)

@@ -4,9 +4,9 @@ import sqlite3
 
 from werkzeug.security import generate_password_hash
 
-from .db import get_db
+from .db import MIN_PASSWORD_LENGTH, get_db
 
-MIN_PASSWORD_LENGTH = 6
+MAX_PASSWORD_LENGTH = 128  # long enough for passphrases, short enough not to hash megabytes
 MAX_NAME_LENGTH = 40
 EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
@@ -25,14 +25,19 @@ def clean_email(email):
     return email
 
 
+def check_password(password):
+    """Raise UserError unless the password has an allowed length."""
+    if not MIN_PASSWORD_LENGTH <= len(password or '') <= MAX_PASSWORD_LENGTH:
+        raise UserError(f'Das Passwort muss {MIN_PASSWORD_LENGTH}–{MAX_PASSWORD_LENGTH} Zeichen lang sein.')
+
+
 def create_user(username, password, display_name=None, is_admin=False, email=None):
     email = clean_email(email)
     username = (username or '').strip().lower()
     display_name = (display_name or '').strip() or username
     if not username or len(username) > MAX_NAME_LENGTH or len(display_name) > MAX_NAME_LENGTH:
         raise UserError(f'Benutzername und Anzeigename müssen 1–{MAX_NAME_LENGTH} Zeichen lang sein.')
-    if len(password or '') < MIN_PASSWORD_LENGTH:
-        raise UserError(f'Das Passwort muss mindestens {MIN_PASSWORD_LENGTH} Zeichen lang sein.')
+    check_password(password)
     try:
         with get_db() as con:
             cur = con.execute(
@@ -53,7 +58,8 @@ def get_user_by_username(username):
 
 
 def set_password(user_id, password):
-    if len(password or '') < MIN_PASSWORD_LENGTH:
-        raise UserError(f'Das Passwort muss mindestens {MIN_PASSWORD_LENGTH} Zeichen lang sein.')
+    """Set a new password and end all sessions of the user (see auth.load_user)."""
+    check_password(password)
     with get_db() as con:
-        con.execute('UPDATE users SET password = ? WHERE id = ?', (generate_password_hash(password), user_id))
+        con.execute('UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?',
+                    (generate_password_hash(password), user_id))

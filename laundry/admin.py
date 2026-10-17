@@ -3,7 +3,7 @@ import secrets
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from .auth import admin_required
+from .auth import admin_required, keep_session
 from .db import get_db, get_setting, set_setting
 from .users import MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, UserError, create_user, get_user, set_password
 
@@ -35,8 +35,10 @@ def create():
 @admin_required
 def reset_password(uid):
     user = get_user(uid) or abort(404)
-    new_password = secrets.token_urlsafe(6)
+    new_password = secrets.token_urlsafe(9)  # 12 characters
     set_password(uid, new_password)
+    if uid == g.user['id']:
+        keep_session()
     flash(f'Neues Passwort für {user["display_name"]}: {new_password}', 'ok')
     return redirect(url_for('admin.index'))
 

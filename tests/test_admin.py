@@ -2,15 +2,15 @@
 def test_admin_requires_admin(client, login):
     t = login('bob')
     assert client.get('/admin').status_code == 403
-    r = client.post('/admin/users', data={'username': 'x', 'password': 'secret123', 'csrf_token': t})
+    r = client.post('/admin/users', data={'username': 'x', 'password': 'secret1234', 'csrf_token': t})
     assert r.status_code == 403
 
 
 def test_create_and_delete_user(client, query, login):
     t = login('alice')
-    client.post('/admin/users', data={'username': 'Carl', 'display_name': 'Carl', 'password': 'secret123',
+    client.post('/admin/users', data={'username': 'Carl', 'display_name': 'Carl', 'password': 'secret1234',
                                       'csrf_token': t})
-    client.post('/admin/users', data={'username': 'carl', 'password': 'secret123', 'csrf_token': t})
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret1234', 'csrf_token': t})
     client.post('/admin/users', data={'username': 'dora', 'password': 'short', 'csrf_token': t})
     assert query('SELECT username FROM users ORDER BY id') == [('alice',), ('bob',), ('carl',)]
 

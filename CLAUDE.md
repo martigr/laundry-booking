@@ -18,7 +18,7 @@ flask --app laundry --debug run              # dev server on :5000
 
 - `laundry/`: the app package. `create_app()` in `__init__.py`; blueprints `auth`, `bookings`,
   `profile`, `admin`; data access in `db.py` and `users.py`; clock and slot definitions in `slots.py`;
-  CLI in `cli.py`.
+  CLI in `cli.py`; security headers and `security.txt` in `security.py`.
 - `laundry/templates/`: Jinja templates extending `base.html`; slot rendering in `_macros.html`.
 - `laundry/static/style.css`: all styling; colours are CSS variables in `:root`.
 - `tests/`: pytest, one file per area; fixtures in `conftest.py` (`app`, `client`, `login`, `csrf`, `query`).
@@ -41,6 +41,7 @@ flask --app laundry --debug run              # dev server on :5000
   test that builds the old schema.
 - Mail only through the outbox: queue with the `notifications.queue_*()` functions (unique `dedupe_key`),
   `flask send-notifications` sends. Never call `mail.deliver()` from a view. Tests use the `mailbox` fixture.
+- No inline `<script>` or `on*=` handlers: the CSP (`security.CSP`) blocks them; JS goes into `static/*.js`.
 - Keep it dependency-light: no ORM, no JS framework, no build step, no external CDNs or fonts.
   Dependencies are pinned in `requirements*.txt`.
 - `seed-demo` is for local demo data only; tests build their own state in fixtures.

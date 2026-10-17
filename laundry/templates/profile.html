@@ -68,19 +68,5 @@
     <button type="submit" class="btn" style="width:100%">Abmelden</button>
   </form>
 </div>
-<script>
-  // Show a mismatch while typing; profile.index() checks it again on the server
-  (function () {
-    var pw = document.getElementById('new_password');
-    var again = document.getElementById('new_password2');
-    var msg = document.getElementById('pw-mismatch');
-    function check() {
-      var text = again.value && again.value !== pw.value ? 'Die Passwörter stimmen nicht überein.' : '';
-      again.setCustomValidity(text);
-      msg.textContent = text;
-    }
-    pw.addEventListener('input', check);
-    again.addEventListener('input', check);
-  })();
-</script>
+<script src="{{ url_for('static', filename='profile.js') }}" defer></script>
 {% endblock %}

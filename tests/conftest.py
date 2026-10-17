@@ -9,7 +9,7 @@ from laundry.users import create_user
 
 # Fixed clock for all tests: Thursday afternoon
 NOW = datetime(2026, 10, 15, 14, 20)
-PASSWORD = 'secret123'
+PASSWORD = 'secret1234'
 
 
 MAIL_CONFIG = {'SMTP_HOST': 'smtp.test', 'MAIL_FROM': 'waschkueche@example.ch', 'BASE_URL': 'https://wk.test'}

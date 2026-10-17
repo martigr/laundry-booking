@@ -14,7 +14,7 @@ served. Admins manage users and the booking horizon.
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only the confirmation dialog in `static/confirm.js`
-  and the live password-repeat check on the profile page)
+  and the live password-repeat check in `static/profile.js`); no inline scripts, the CSP forbids them
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -27,13 +27,15 @@ laundry/                  # the application package
 ├── mail.py               # is_configured(), deliver(): one plain-text mail over SMTP
 ├── notifications.py      # outbox: queue_*() for reminders/freed slots/password reset, run_once()
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
-├── auth.py               # bp "auth": login/logout, CSRF, login_required/admin_required
+├── auth.py               # bp "auth": login/logout, login throttling, CSRF, login_required/admin_required
+├── security.py           # security headers (CSP etc.), /.well-known/security.txt
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, password
 ├── admin.py              # bp "admin": users, settings
-├── cli.py                # flask commands: create-user, make-admin, seed-demo
+├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
+├── static/profile.js     # live "passwords don't match" hint on the profile page
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
     ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
@@ -51,9 +53,11 @@ tests/
 ├── test_bookings.py      # booking rules, cancel permissions, views, escaping
 ├── test_admin.py         # admin area
 ├── test_cli.py           # CLI commands, first-admin bootstrap
-└── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
+├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
+└── test_security.py      # headers, input limits, redirects, login throttling, sessions, security.txt, backup
 docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
 docker-compose.yml        # web + notifier container, settings from .env (.env.example)
+SECURITY.md               # how to report vulnerabilities
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
@@ -91,7 +95,9 @@ duplicated.
 
 `create_app(test_config=None)` reads the environment (see the README for the table) and
 then applies `test_config` on top. Config keys: `SECRET_KEY`, `DATABASE`, `TIMEZONE`,
-`ADMIN_USERNAME`, `ADMIN_PASSWORD` and the Flask session cookie settings.
+`ADMIN_USERNAME`, `ADMIN_PASSWORD`, the Flask session cookie settings, `MAX_CONTENT_LENGTH` (64 KB),
+`TRUSTED_PROXIES` (wraps the app in werkzeug's `ProxyFix` when > 0), `SECURITY_CONTACT`, `BASE_URL`
+and the `SMTP_*`/`MAIL_*` settings.
 
 ## Data model
 
@@ -106,6 +112,7 @@ is_admin      INTEGER 0/1               UNIQUE (day, slot)
 email         TEXT  optional
 reminder_minutes INTEGER 0 = off
 notify_freed  INTEGER 0/1
+session_version INTEGER  +1 on every password change
 
 notifications (outbox)
 ──────────────────────
@@ -113,6 +120,11 @@ dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>', 'freed:<reservation 
 to_addr, subject, body
 created_at, expires_at    not sent after expires_at (slot start, reset link validity)
 sent_at, attempts, last_error
+
+login_failures (failed logins of the last 15 minutes)
+──────────────
+key   TEXT   'user:<username>' or 'ip:<address>'
+at    TEXT   ISO time; older rows are deleted on the next failure
 
 settings
 ────────
@@ -149,19 +161,24 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 
 - `before_request` hooks (registered by `auth.init_app`): `check_csrf()` for every POST,
   then `load_user()`, which sets `g.user` (a `sqlite3.Row` or `None`) and ends the
-  session if the user was deleted.
+  session if the user was deleted or the password changed since login (`session['sv']` no longer
+  matches `users.session_version`).
+- `after_request`: `security.add_headers()` sets the security headers on every response.
 - Decorators: `@login_required` redirects to the login page; `@admin_required` also
   returns 403 for non-admins.
 - State-changing actions are plain HTML form POSTs that answer with a redirect
   (Post/Redirect/Get). Feedback goes through `flash(message, 'ok' | 'warn')`.
 - After book/cancel, `back_to_calendar()` returns to the form's `next` field. Only local
-  paths are accepted; `//host`, `/\host` and absolute URLs fall back to `/`.
+  paths are accepted; `//host`, anything with a backslash or a control character (browsers drop
+  tabs and line breaks, so `/<tab>/host` would become `//host`) and absolute URLs fall back to `/`.
+- Dates from requests go through `slots.parse_day()`, which only accepts `MIN_DAY..MAX_DAY`
+  (2000–2999), so the calendar arithmetic can't overflow.
 
 ### Routes
 
 | Route | Method | Endpoint | Access | Purpose |
 |---|---|---|---|---|
-| `/login` | GET/POST | `auth.login` | public | `remember` makes the session last 30 days |
+| `/login` | GET/POST | `auth.login` | public | `remember` makes the session last 30 days; 429 when throttled |
 | `/logout` | POST | `auth.logout` | public | POST so other sites can't log you out |
 | `/` | GET | `bookings.index` | user | Week view; `?week=YYYY-MM-DD` (any day of the week) |
 | `/month` | GET | `bookings.month` | user | Month overview; `?month=YYYY-MM` |
@@ -172,13 +189,14 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/profile` | GET/POST | `profile.index` | user | `action=name`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
-| `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password, shown once |
+| `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once; ends the user's sessions |
 | `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
 | `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
-| `/passwort-vergessen` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail; same answer whether the account exists or not |
+| `/passwort-vergessen` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
 | `/passwort-zuruecksetzen/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
 | `/abbestellen/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
 | `/health` | GET | `health` | public | Liveness probe |
+| `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
 
 ### Booking rules
 
@@ -239,15 +257,36 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   without the field fails with 400. (A small hand-written check instead of Flask-WTF,
   since the app has no other use for WTForms.)
 - **Sessions:** `session.clear()` on login (against session fixation) and logout;
-  HttpOnly and SameSite=Lax cookies; Secure via `SESSION_COOKIE_SECURE`.
+  HttpOnly and SameSite=Lax cookies; Secure via `SESSION_COOKIE_SECURE`. Flask sessions are
+  signed cookies, so the server can't delete them; instead `set_password()` increments
+  `users.session_version` and `load_user()` ends every session that carries an older version. The
+  session where the user changed their own password keeps working (`auth.keep_session()`).
+  Sessions from before the column existed have no `sv` and match the default 0.
+- **Login throttling:** every failed login adds a row for the username and one for the client
+  address to `login_failures`. With 10 (`MAX_FAILURES_PER_USER`) or 20 (`MAX_FAILURES_PER_IP`) in
+  the last 15 minutes, `/login` answers 429 without checking the password. A successful login
+  clears the username's rows. Trade-off: someone can lock a username for 15 minutes; residents with
+  "stay signed in" don't notice. Unknown usernames are checked against a dummy hash, so the
+  response time doesn't reveal whether an account exists. Failed and blocked logins are logged
+  with `%r` (no forged log lines). The client address is `request.remote_addr`, which is the
+  proxy's unless `TRUSTED_PROXIES` is set.
+- **Headers** (`security.add_headers()`): a strict CSP (`script-src 'self'`, no inline scripts;
+  `style-src` allows inline `style=""` attributes; `frame-ancestors 'none'`, `form-action 'self'`),
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (tokens
+  in reset/unsubscribe URLs), `Cache-Control: no-store` except for static files, and HSTS when the
+  request came over HTTPS. JavaScript goes into files in `static/`.
+- **Limits:** `MAX_CONTENT_LENGTH` = 64 KB (413 above), passwords 10–128 characters
+  (`users.check_password()`, also for `ADMIN_PASSWORD`), dates 2000–2999.
 - **Escaping:** Jinja autoescape covers HTML. Confirmation texts go into plain `data-confirm*`
   attributes (autoescaped) and `confirm.js` inserts them with `textContent`, so no inline JS is
   needed. Should you ever put values into inline JS, use `|tojson` in a *single-quoted*
   attribute; `|e` is not safe there. `test_display_name_is_escaped` covers this.
-- **Passwords:** werkzeug hashes, minimum length `users.MIN_PASSWORD_LENGTH`.
+- **Passwords:** werkzeug hashes (scrypt), length `db.MIN_PASSWORD_LENGTH`..`users.MAX_PASSWORD_LENGTH`.
 - **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
-  off and need a POST (link scanners only GET).
+  off and need a POST (link scanners only GET). `queue_password_reset()` queues at most one reset
+  mail per user within `RESET_INTERVAL` (15 min), since anyone can ask for one.
+- **Reporting:** `SECURITY.md` (GitHub private advisories) and `/.well-known/security.txt`.
 - **Container:** `docker-entrypoint.sh` starts as root only to `chown` the data folder and the
   `laundry.db*` files to `PUID:PGID` (default 1000), then `exec setpriv` drops to that user
   before the app starts. With `--user` it skips the `chown`. `db.ensure_writable()` checks at
@@ -306,5 +345,7 @@ there too. One-time setup: *Settings → Pages → Source: GitHub Actions*.
 
 ## Deployment
 
-See the README. In short: build the Docker image, mount a volume at `/data`, set
-`SECRET_KEY` (and the first admin), put it behind HTTPS and set `SESSION_COOKIE_SECURE=1`.
+See the README, in particular *HTTPS*, *Backup and restore* and the *Security checklist*. In short:
+build the Docker image, mount a volume at `/data`, set `SECRET_KEY` (and the first admin), put it
+behind an HTTPS reverse proxy, set `SESSION_COOKIE_SECURE=1` and `TRUSTED_PROXIES=1`, and back up
+with `flask backup`. `docker-compose.yml` publishes port 5000 on `127.0.0.1` only.
