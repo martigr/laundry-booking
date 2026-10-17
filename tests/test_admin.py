@@ -2,15 +2,15 @@
 def test_admin_requires_admin(client, login):
     t = login('bob')
     assert client.get('/admin').status_code == 403
-    r = client.post('/admin/users', data={'username': 'x', 'password': 'secret123', 'csrf_token': t})
+    r = client.post('/admin/users', data={'username': 'x', 'password': 'secret1234', 'csrf_token': t})
     assert r.status_code == 403
 
 
 def test_create_and_delete_user(client, query, login):
     t = login('alice')
-    client.post('/admin/users', data={'username': 'Carl', 'display_name': 'Carl', 'password': 'secret123',
+    client.post('/admin/users', data={'username': 'Carl', 'display_name': 'Carl', 'password': 'secret1234',
                                       'csrf_token': t})
-    client.post('/admin/users', data={'username': 'carl', 'password': 'secret123', 'csrf_token': t})
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret1234', 'csrf_token': t})
     client.post('/admin/users', data={'username': 'dora', 'password': 'short', 'csrf_token': t})
     assert query('SELECT username FROM users ORDER BY id') == [('alice',), ('bob',), ('carl',)]
 
@@ -40,8 +40,11 @@ def test_cannot_delete_self(client, query, login):
 
 def test_reset_password(client, login):
     t = login('alice')
-    page = client.post('/admin/users/2/reset', data={'csrf_token': t}, follow_redirects=True).get_data(as_text=True)
-    new_password = page.split('Neues Passwort für Bob: ')[1].split('<')[0]
+    r = client.post('/admin/users/2/reset', data={'csrf_token': t})
+    assert r.status_code == 200  # shown in this response, not via a redirect and the session
+    new_password = r.get_data(as_text=True).split('Neues Passwort für Bob: <code>')[1].split('<')[0]
+    assert new_password not in str(client.get_cookie('session').value)
+    assert new_password not in client.get('/admin').get_data(as_text=True)  # only once
     client.post('/logout', data={'csrf_token': t})
     login('bob', new_password)
     assert client.get('/').status_code == 200

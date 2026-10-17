@@ -36,19 +36,23 @@ as_root() {  # run a command in a throwaway container as root with BIND_DIR at /
     docker run --rm --user 0:0 --entrypoint sh -v "$BIND_DIR":/x "$IMAGE" -c "$1"
 }
 
-echo "1) Named volume: starts, healthy, runs as uid 1000, CLI and notifier work"
+echo "1) Named volume: starts, healthy, runs as uid 1000, CLI and notifier work, no tokens in the access log"
 NAME=smoke-named
 docker run -d --name "$NAME" -p 5101:5000 -v smoke-data:/data \
-    -e SECRET_KEY=ci -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=secret123 "$IMAGE" >/dev/null
+    -e SECRET_KEY=ci -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=secret1234 "$IMAGE" >/dev/null
 wait_healthy 5101 || fail "health endpoint did not answer"
 uid="$(docker exec "$NAME" stat -c %u /proc/1)"
 [ "$uid" = "1000" ] || fail "app runs as uid $uid, expected 1000"
-printf 'secret123\nsecret123\n' | docker exec -i --user 1000:1000 "$NAME" \
+printf 'secret1234\nsecret1234\n' | docker exec -i --user 1000:1000 "$NAME" \
     flask --app laundry create-user smoke --name Smoke >/dev/null || fail "create-user via docker exec"
 docker exec --user 1000:1000 "$NAME" flask --app laundry send-notifications >/dev/null 2>&1 \
     || fail "send-notifications via docker exec"
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5101/login)"
 [ "$code" = "200" ] || fail "/login returned $code"
+curl -s -o /dev/null http://127.0.0.1:5101/passwort-zuruecksetzen/smoketoken42
+sleep 1
+docker logs "$NAME" 2>&1 | grep -q 'GET /passwort-zuruecksetzen/\*\*\*' || fail "no redacted access log line"
+if docker logs "$NAME" 2>&1 | grep -q smoketoken42; then fail "reset token in the access log"; fi
 docker rm -f "$NAME" >/dev/null
 
 echo "2) Host folder owned by root, PUID/PGID set: ownership is fixed"

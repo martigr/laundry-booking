@@ -181,6 +181,8 @@ def month():
     try:
         y, m = map(int, request.args.get('month', '').split('-'))
         first = date(y, m, 1)
+        if parse_day(first.isoformat()) is None:
+            raise ValueError('out of range')
     except ValueError:
         first = today.replace(day=1)
     last = first.replace(day=monthrange(first.year, first.month)[1])
@@ -199,8 +201,9 @@ def month():
 
 def back_to_calendar():
     target = request.form.get('next', '')
-    # Only local paths; '//host' and '/\host' would leave the site
-    if target.startswith('/') and not target.startswith(('//', '/\\')):
+    # Only local paths. '//host' leaves the site, and browsers read '\' as '/' and drop tabs and
+    # line breaks, so '/\host' and '/<tab>/host' would too
+    if target.startswith('/') and not target.startswith('//') and '\\' not in target and target.isprintable():
         return redirect(target)
     return redirect(url_for('bookings.index'))
 

@@ -1,15 +1,21 @@
 # Web app + notifier (sends reminder and other mails every minute). Settings come from .env,
 # see .env.example. Start with: docker compose up -d --build
+# The app speaks plain HTTP: put an HTTPS reverse proxy in front of it (see README, "HTTPS").
 services:
   web:
     build: .
     image: laundry-booking
     env_file: .env
     ports:
-      - "5000:5000"
+      # Only reachable from this host, i.e. the reverse proxy; never expose port 5000 directly
+      - "127.0.0.1:5000:5000"
     volumes:
       - laundry-data:/data
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      options: {max-size: 10m, max-file: "3"}
 
   notifier:
     build: .
@@ -19,6 +25,10 @@ services:
     volumes:
       - laundry-data:/data
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      options: {max-size: 10m, max-file: "3"}
     depends_on:
       - web
     healthcheck:

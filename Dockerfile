@@ -22,5 +22,7 @@ HEALTHCHECK --interval=30s --timeout=3s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')" || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-# SQLite allows one writer at a time, so a few workers are plenty
-CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "laundry:create_app()"]
+# SQLite allows one writer at a time, so a few workers are plenty.
+# The logger class keeps the tokens of mail links out of the access log.
+CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:5000", "--access-logfile", "-", \
+     "--logger-class", "laundry.accesslog.RedactingLogger", "laundry:create_app()"]

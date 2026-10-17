@@ -5,18 +5,28 @@ from datetime import datetime
 import pytest
 
 from laundry import create_app, mail, notifications, slots
+from laundry.db import get_db
 
 REAL_DELIVER = mail.deliver  # captured before the mailbox fixture replaces it
 NOW = datetime(2026, 10, 15, 14, 20)
 
 
-def set_prefs(client, login, username, email, minutes=0, freed=False):
+def set_prefs(client, login, username, email, minutes=0, freed=False, verified=True):
     t = login(username)
     data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'csrf_token': t}
     if freed:
         data['notify_freed'] = '1'
     client.post('/profile', data=data)
+    if verified:
+        verify(client.application, username)
     return t
+
+
+def verify(app, username):
+    """Mark the address as confirmed and drop the verification mail, as if the link was used."""
+    with app.app_context(), get_db() as con:
+        con.execute('UPDATE users SET email_verified = 1 WHERE username = ?', (username,))
+        con.execute("DELETE FROM notifications WHERE dedupe_key LIKE 'verify:%'")
 
 
 def run(app):
@@ -144,8 +154,8 @@ def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
     path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
 
     assert client.get(path).status_code == 200
-    client.post(path, data={'password': 'brandnew1', 'csrf_token': csrf()})
-    login('bob', 'brandnew1')
+    client.post(path, data={'password': 'brandnew12', 'csrf_token': csrf()})
+    login('bob', 'brandnew12')
     assert client.get('/').status_code == 200
     assert client.get(path).status_code == 400  # single use
 
@@ -189,9 +199,9 @@ def test_without_mail_config_nothing_is_queued(tmp_path, monkeypatch):
 
 def test_admin_creates_user_with_email(client, login, query):
     t = login('alice')
-    client.post('/admin/users', data={'username': 'carl', 'password': 'secret123', 'email': 'carl@example.ch',
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret1234', 'email': 'carl@example.ch',
                                       'csrf_token': t})
-    client.post('/admin/users', data={'username': 'dora', 'password': 'secret123', 'email': 'no-at-sign',
+    client.post('/admin/users', data={'username': 'dora', 'password': 'secret1234', 'email': 'no-at-sign',
                                       'csrf_token': t})
     assert query("SELECT username, email FROM users WHERE username IN ('carl', 'dora')") == \
         [('carl', 'carl@example.ch')]
@@ -209,8 +219,9 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     create_app({'TESTING': True, 'DATABASE': str(path)})
     create_app({'TESTING': True, 'DATABASE': str(path)})  # idempotent
     con = sqlite3.connect(path)
-    assert con.execute('SELECT username, email, reminder_minutes, notify_freed FROM users').fetchall() == \
-        [('bob', None, 0, 0)]
+    assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version FROM users'
+                       ).fetchall() == [('bob', None, 0, 0, 0)]
+    assert con.execute('SELECT COUNT(*) FROM login_failures').fetchone() == (0,)
 
 
 @pytest.mark.parametrize('security', ['starttls', 'ssl', 'none'])
@@ -246,3 +257,89 @@ def test_deliver_uses_smtp_settings(app, monkeypatch, security):
     assert (('starttls',) in calls) == (security == 'starttls')
     assert ('login', 'waschkueche@example.ch', 'pw') in calls
     assert calls[-1] == ('send', 'bob@example.ch', 'Waschküche <waschkueche@example.ch>', 'Betreff')
+
+
+def test_new_address_must_be_confirmed(app, client, login, csrf, mailbox, monkeypatch, query):
+    set_prefs(client, login, 'bob', 'bob@example.ch', minutes=60, verified=False)
+    t = login('bob')
+    assert 'Noch nicht bestätigt' in client.get('/profile').get_data(as_text=True)
+    client.post('/book', data={'day': '2026-10-15', 'slot': 'Abend', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 16, 30)
+    run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: E-Mail-Adresse bestätigen']  # no reminder yet
+
+    path = link_in(mailbox[0][2], '/email-bestaetigen/')
+    other = app.test_client()  # works without being logged in
+    assert 'Ja, bestätigen' in other.get(path).get_data(as_text=True)
+    assert query("SELECT email_verified FROM users WHERE username = 'bob'") == [(0,)]  # GET changes nothing
+    r = other.post(path, data={'csrf_token': csrf(other)})
+    assert 'Adresse bestätigt' in r.get_data(as_text=True)
+    assert query("SELECT email_verified FROM users WHERE username = 'bob'") == [(1,)]
+    assert 'Noch nicht bestätigt' not in client.get('/profile').get_data(as_text=True)
+
+    # A changed address needs a new confirmation, and the old link no longer fits
+    set_prefs(client, login, 'bob', 'bob@neu.example.ch', minutes=60, verified=False)
+    assert query("SELECT email_verified FROM users WHERE username = 'bob'") == [(0,)]
+    assert other.post(path, data={'csrf_token': csrf(other)}).status_code == 400
+    # Saving other settings with the same address keeps the state
+    set_prefs(client, login, 'bob', 'bob@neu.example.ch', minutes=30, verified=False)
+    run(app)
+    assert [m[0] for m in mailbox if 'bestätigen' in m[1]] == ['bob@example.ch', 'bob@neu.example.ch']
+
+
+def test_reset_mail_only_to_confirmed_address(app, client, csrf, login, mailbox):
+    set_prefs(client, login, 'bob', 'bob@example.ch', verified=False)
+    client.post('/logout', data={'csrf_token': csrf()})
+    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+    run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: E-Mail-Adresse bestätigen']
+
+
+def test_verification_mail_can_be_resent(app, client, login, mailbox, monkeypatch):
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', verified=False)
+    client.post('/profile', data={'action': 'verify_email', 'csrf_token': t})  # within 15 min: not again
+    at(monkeypatch, 2026, 10, 15, 14, 40)
+    r = client.post('/profile', data={'action': 'verify_email', 'csrf_token': t}, follow_redirects=True)
+    assert 'Bestätigungsmail an bob@example.ch verschickt' in r.get_data(as_text=True)
+    run(app)
+    assert len(mailbox) == 2
+
+
+def test_invalid_or_expired_verification_link(app, client, login, mailbox, monkeypatch):
+    assert client.get('/email-bestaetigen/forged').status_code == 400
+    set_prefs(client, login, 'bob', 'bob@example.ch', verified=False)
+    run(app)
+    path = link_in(mailbox[0][2], '/email-bestaetigen/')
+    import itsdangerous.timed
+    real = itsdangerous.timed.TimestampSigner.get_timestamp
+    monkeypatch.setattr(itsdangerous.timed.TimestampSigner, 'get_timestamp', lambda self: real(self) + 8 * 86400)
+    assert client.get(path).status_code == 400
+
+
+def test_admin_created_address_must_be_confirmed(app, client, login, mailbox, query):
+    t = login('alice')
+    client.post('/admin/users', data={'username': 'carl', 'password': 'secret1234', 'email': 'carl@example.ch',
+                                      'csrf_token': t})
+    assert '(unbestätigt)' in client.get('/admin').get_data(as_text=True)
+    run(app)
+    assert [(m[0], m[1]) for m in mailbox] == [('carl@example.ch', 'Waschküche: E-Mail-Adresse bestätigen')]
+
+
+def test_existing_addresses_stay_confirmed_after_upgrade(tmp_path):
+    path = tmp_path / 'old.db'
+    con = sqlite3.connect(path)
+    con.execute("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
+                   password TEXT NOT NULL, display_name TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,
+                   email TEXT, reminder_minutes INTEGER NOT NULL DEFAULT 0, notify_freed INTEGER NOT NULL DEFAULT 0)""")
+    con.execute("INSERT INTO users (username, password, display_name, email) VALUES ('bob', 'x', 'Bob', 'b@x.ch')")
+    con.execute("INSERT INTO users (username, password, display_name) VALUES ('dora', 'x', 'Dora')")
+    con.commit()
+    con.close()
+
+    app = create_app({'TESTING': True, 'DATABASE': str(path)})
+    with app.app_context(), get_db() as db:
+        db.execute("UPDATE users SET email_verified = 0 WHERE username = 'bob'")  # must survive restarts
+    create_app({'TESTING': True, 'DATABASE': str(path)})
+    con = sqlite3.connect(path)
+    assert con.execute('SELECT username, email_verified FROM users ORDER BY id').fetchall() == \
+        [('bob', 0), ('dora', 0)]

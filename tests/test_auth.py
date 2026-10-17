@@ -8,7 +8,7 @@ def test_login_and_logout(client, csrf):
     r = client.post('/login', data={'username': 'bob', 'password': 'wrong', 'csrf_token': t})
     assert 'Benutzername oder Passwort falsch' in r.get_data(as_text=True)
 
-    r = client.post('/login', data={'username': ' Bob ', 'password': 'secret123', 'csrf_token': t})
+    r = client.post('/login', data={'username': ' Bob ', 'password': 'secret1234', 'csrf_token': t})
     assert r.status_code == 302
     assert 'Wochenkalender' in client.get('/').get_data(as_text=True)
 
@@ -49,20 +49,20 @@ def test_profile(client, query, login, csrf):
     t = login('bob')
     client.post('/profile', data={'action': 'name', 'display_name': 'Bob 2. OG', 'csrf_token': t})
     client.post('/profile', data={'action': 'password', 'old_password': 'wrong',
-                                  'new_password': 'newsecret', 'new_password2': 'newsecret', 'csrf_token': t})
-    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
+                                  'new_password': 'newsecret1', 'new_password2': 'newsecret1', 'csrf_token': t})
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret1234',
                                   'new_password': 'short', 'new_password2': 'short', 'csrf_token': t})
-    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
-                                  'new_password': 'newsecret', 'new_password2': 'newsecreT', 'csrf_token': t})
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret1234',
+                                  'new_password': 'newsecret1', 'new_password2': 'newsecreT1', 'csrf_token': t})
     assert 'Die neuen Passwörter stimmen nicht überein.' in client.get('/profile').get_data(as_text=True)
-    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
-                                  'new_password': 'newsecret', 'csrf_token': t})  # repetition missing
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret1234',
+                                  'new_password': 'newsecret1', 'csrf_token': t})  # repetition missing
     assert query("SELECT display_name FROM users WHERE username = 'bob'") == [('Bob 2. OG',)]
-    t = login('bob', 'secret123')  # old password still valid
+    t = login('bob', 'secret1234')  # old password still valid
 
     assert 'name="new_password2"' in client.get('/profile').get_data(as_text=True)
-    client.post('/profile', data={'action': 'password', 'old_password': 'secret123',
-                                  'new_password': 'newsecret', 'new_password2': 'newsecret', 'csrf_token': t})
+    client.post('/profile', data={'action': 'password', 'old_password': 'secret1234',
+                                  'new_password': 'newsecret1', 'new_password2': 'newsecret1', 'csrf_token': t})
     client.post('/logout', data={'csrf_token': csrf()})
-    login('bob', 'newsecret')
+    login('bob', 'newsecret1')
     assert client.get('/').status_code == 200

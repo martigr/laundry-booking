@@ -22,6 +22,8 @@ REMINDER_CHOICES = [
 ]
 FREED_WINDOW = timedelta(days=7)   # only announce freed slots that start within this window
 RESET_VALID = timedelta(hours=1)
+RESET_INTERVAL = timedelta(minutes=15)  # at most one reset (or verification) mail per user in this time
+VERIFY_VALID = timedelta(days=7)
 MAX_ATTEMPTS = 5
 KEEP_SENT = timedelta(days=30)
 
@@ -70,6 +72,23 @@ def read_reset_token(token):
     return row['id']
 
 
+def _verify_serializer():
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt='verify-email')
+
+
+def verify_token(user_id, email):
+    return _verify_serializer().dumps({'u': user_id, 'e': email})
+
+
+def read_verify_token(token):
+    """(user_id, email) if the token is valid and unexpired, else None."""
+    try:
+        data = _verify_serializer().loads(token, max_age=int(VERIFY_VALID.total_seconds()))
+        return data['u'], data['e']
+    except (BadSignature, KeyError, TypeError):
+        return None
+
+
 # --- Queueing --------------------------------------------------------------------------------
 
 def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None):
@@ -104,7 +123,7 @@ def queue_freed_slots(con, freed, cancelled_by):
         return
     users = con.execute("""
         SELECT id, display_name, email FROM users
-        WHERE notify_freed = 1 AND email IS NOT NULL AND email != '' AND id != ?
+        WHERE notify_freed = 1 AND email IS NOT NULL AND email != '' AND email_verified = 1 AND id != ?
     """, (cancelled_by,)).fetchall()
     for day, entries in sorted(by_day.items()):
         entries.sort(key=lambda e: e[2])
@@ -129,7 +148,7 @@ def queue_due_reminders(con):
     rows = con.execute("""
         SELECT r.id, r.day, r.slot, u.id AS user_id, u.display_name, u.email, u.reminder_minutes
         FROM reservations r JOIN users u ON u.id = r.user_id
-        WHERE u.reminder_minutes > 0 AND u.email IS NOT NULL AND u.email != ''
+        WHERE u.reminder_minutes > 0 AND u.email IS NOT NULL AND u.email != '' AND u.email_verified = 1
           AND r.day BETWEEN ? AND ?
     """, (now.date().isoformat(), (now + timedelta(minutes=longest)).date().isoformat())).fetchall()
     for r in rows:
@@ -149,7 +168,11 @@ def queue_due_reminders(con):
 
 
 def queue_password_reset(con, user):
+    """Queue a reset link, unless one was queued lately (anyone can ask, so this stops mail floods)."""
     now = slots.now()
+    if con.execute('SELECT 1 FROM notifications WHERE dedupe_key LIKE ? AND created_at > ?',
+                   (f'reset:{user["id"]}:%', (now - RESET_INTERVAL).isoformat(timespec='seconds'))).fetchone():
+        return
     body = (f'Hallo {user["display_name"]}\n\n'
             f'Für dein Konto „{user["username"]}“ wurde ein neues Passwort angefordert.\n'
             f'Über diesen Link setzt du es (gültig für 1 Stunde):\n\n'
@@ -157,6 +180,25 @@ def queue_password_reset(con, user):
             f'Warst du das nicht? Dann ignoriere diese Mail, dein Passwort bleibt unverändert.\n')
     _queue(con, f'reset:{user["id"]}:{now.isoformat(timespec="seconds")}', user['email'],
            'Waschküche: Passwort zurücksetzen', body, expires_at=now + RESET_VALID)
+
+
+def queue_email_verification(con, user):
+    """Ask the user to confirm their address. Until then it gets no mails: with a typo, reminders
+    and reset links (= the account) would go to a stranger."""
+    if not mail.is_configured() or not user['email']:
+        return
+    now = slots.now()
+    if con.execute('SELECT 1 FROM notifications WHERE dedupe_key LIKE ? AND to_addr = ? AND created_at > ?',
+                   (f'verify:{user["id"]}:%', user['email'],
+                    (now - RESET_INTERVAL).isoformat(timespec='seconds'))).fetchone():
+        return
+    body = (f'Hallo {user["display_name"]}\n\n'
+            f'Bitte bestätige, dass diese Adresse zu deinem Konto „{user["username"]}“ gehört:\n\n'
+            f'{link("/email-bestaetigen/" + verify_token(user["id"], user["email"]))}\n\n'
+            f'Erst danach bekommst du Erinnerungen und kannst dein Passwort per Mail zurücksetzen.\n'
+            f'Der Link gilt 7 Tage. Hast du dich nicht angemeldet? Dann ignoriere diese Mail.\n')
+    _queue(con, f'verify:{user["id"]}:{now.isoformat(timespec="seconds")}:{user["email"]}', user['email'],
+           'Waschküche: E-Mail-Adresse bestätigen', body, expires_at=now + VERIFY_VALID)
 
 
 # --- Sending ---------------------------------------------------------------------------------

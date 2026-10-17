@@ -35,8 +35,10 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
   admins can cancel any booking
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
-  every mail has a one-click unsubscribe link
-- CSRF protection on all forms; German UI
+  addresses are confirmed by a link first; every mail has a one-click unsubscribe link
+- Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
+  sessions end on password change; see [SECURITY.md](SECURITY.md)
+- German UI
 
 ## Quick start (development)
 
@@ -61,9 +63,11 @@ pytest
 ## Production (Docker Compose)
 
 ```bash
-cp .env.example .env        # fill in SECRET_KEY, admin, BASE_URL and the mail settings
+cp .env.example .env && chmod 600 .env   # fill in SECRET_KEY, admin, BASE_URL and the mail settings
 docker compose up -d --build
 ```
+
+The app listens on `127.0.0.1:5000` only; put an HTTPS reverse proxy in front of it (see *HTTPS* below).
 
 This starts two containers from the same image and the same `/data` volume:
 
@@ -75,17 +79,18 @@ This starts two containers from the same image and the same `/data` volume:
 
 ```bash
 docker build -t laundry-booking .
-docker run -d --name laundry -p 5000:5000 \
+docker run -d --name laundry -p 127.0.0.1:5000:5000 \
   -v laundry-data:/data \
-  -e SECRET_KEY='a-long-random-secret' \
-  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='change-me-please' \
+  -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='at-least-10-characters' \
   laundry-booking
 ```
 
 - The app runs as an unprivileged user (UID/GID 1000 by default); the database lives in `/data`.
 - `ADMIN_USERNAME`/`ADMIN_PASSWORD` create the first admin when the database has no users yet.
   Afterwards the admin creates all other users in the app under *Verwaltung*.
-- Serve it behind HTTPS (reverse proxy) and set `SESSION_COOKIE_SECURE=1`.
+- Serve it behind HTTPS (see *HTTPS* below) with `SESSION_COOKIE_SECURE=1` and `TRUSTED_PROXIES=1`.
+- Keep the `SECRET_KEY`: changing it logs everybody out and invalidates the links in sent mails.
 - `/health` is used by the Docker health check.
 
 ### Volumes and permissions
@@ -108,6 +113,99 @@ A restart fixes the ownership again.
 
 Without Docker: `gunicorn --workers 2 --bind 0.0.0.0:5000 "laundry:create_app()"` with the same environment variables.
 
+### HTTPS (reverse proxy)
+
+The app itself speaks plain HTTP. Put a reverse proxy in front of it that terminates HTTPS, and
+keep port 5000 reachable only from that proxy (`127.0.0.1:5000`, as in `docker-compose.yml`).
+[Caddy](https://caddyserver.com/) on the same host gets the certificate by itself:
+
+```
+# /etc/caddy/Caddyfile
+waschkueche.example.ch {
+    reverse_proxy 127.0.0.1:5000
+}
+```
+
+With nginx (certificate e.g. from certbot):
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:5000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Then set in `.env`:
+
+- `SESSION_COOKIE_SECURE=1`: the session cookie is only sent over HTTPS.
+- `TRUSTED_PROXIES=1`: the app trusts the `X-Forwarded-For`/`-Proto` headers of one proxy. It needs
+  them for the real client address (login throttling, logs) and to know the request came over
+  HTTPS (then it sends `Strict-Transport-Security`). Use the number of proxies in the chain; leave
+  it at `0` when nothing sits in front of the app, otherwise clients can fake their address.
+  Without it, every request seems to come from the proxy (or Docker's gateway), so the limit of
+  20 failed logins per address applies to all residents together.
+- `BASE_URL=https://waschkueche.example.ch` for the links in mails.
+
+### Backup and restore
+
+All data lives in one SQLite file. `flask backup` copies it consistently while the app runs:
+
+```bash
+docker compose exec --user 1000:1000 web flask --app laundry backup /data/backup.db
+docker compose cp web:/data/backup.db ./laundry-$(date +%F).db
+docker compose exec web rm /data/backup.db
+```
+
+Run this daily (cron) and keep copies on another machine. Backups contain password hashes and mail
+addresses: store them private (`chmod 600`) or encrypted, and delete old ones. Try a restore
+once, before you need it:
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh -v "$PWD":/backup web \
+  -c 'cp /backup/laundry-2026-10-17.db /data/laundry.db && rm -f /data/laundry.db-wal /data/laundry.db-shm'
+docker compose start      # the entrypoint gives the restored file back to the app user
+```
+
+Without Docker: `flask --app laundry backup <file>`; to restore, stop the app and replace the
+database file (delete `laundry.db-wal` and `laundry.db-shm` next to it).
+
+### Updates
+
+```bash
+git pull
+docker compose build --pull && docker compose up -d   # --pull also gets security fixes of the base image
+```
+
+Update at least monthly. To hear about security fixes, watch the repository on GitHub
+(*Watch → Custom → Security alerts*).
+
+### Logs
+
+`docker compose logs web` shows requests and logins. Failed logins are logged as
+`Failed login for 'name' from <address>`, blocked ones as `Login blocked`; after 10 failures for a
+username or 20 from one address within 15 minutes, logins are refused for the rest of that time.
+Logs contain IP addresses and usernames; `docker-compose.yml` therefore keeps at most 3 × 10 MB per
+container. The tokens of mail links (password reset, unsubscribe, confirm address) appear as `***`
+in the app's access log. Your reverse proxy logs them in full if it keeps an access log (nginx does
+by default, Caddy doesn't): turn it off for these paths or keep those logs short and private.
+
+### Security checklist
+
+Before the app goes online:
+
+- [ ] HTTPS reverse proxy in front, port 5000 not reachable from outside
+- [ ] `SESSION_COOKIE_SECURE=1`, `TRUSTED_PROXIES` matches the proxies, `BASE_URL` uses `https://`
+- [ ] `SECRET_KEY` long and random (`python3 -c 'import secrets; print(secrets.token_urlsafe(48))'`)
+- [ ] `.env` readable only by you (`chmod 600 .env`) and never committed
+- [ ] After the first start: log in, change the admin password in the profile and remove
+      `ADMIN_PASSWORD` from `.env`
+- [ ] `SECURITY_CONTACT` set, so people know whom to tell about a problem
+- [ ] Daily backups on another machine, restore tried once
+- [ ] Updates at least monthly (`docker compose build --pull`)
+
 ### Mail (Infomaniak)
 
 Use a mailbox of your domain, e.g. `waschkueche@example.ch`, and set in `.env`:
@@ -125,7 +223,8 @@ BASE_URL=https://waschkueche.example.ch
 Any other SMTP provider works the same way. Mails are queued in the database and sent by the
 `notifier`; if the mail server is unreachable they are retried (up to 5 times) and dropped once
 they are no longer relevant (e.g. a reminder after the slot started). Residents enter their address
-and choose their notifications under *Profil*; the "Passwort vergessen?" link on the login page
+and choose their notifications under *Profil*; they get mails only after confirming the address
+with the link in the first mail; the "Passwort vergessen?" link on the login page
 only appears when mail is configured.
 
 For local development, [Mailpit](https://mailpit.axllent.org/) catches all mails in a web inbox:
@@ -139,8 +238,10 @@ SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 | `SECRET_KEY` | – (required outside debug mode) | Session signing |
 | `DATABASE` | `instance/laundry.db` (`/data/laundry.db` in Docker) | SQLite file |
 | `APP_TIMEZONE` | `Europe/Zurich` | Defines "today" and "now" |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | First admin on an empty database |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | – | First admin on an empty database (password at least 10 characters) |
 | `SESSION_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS |
+| `TRUSTED_PROXIES` | `0` | Number of reverse proxies whose `X-Forwarded-For`/`-Proto` headers are trusted (see *HTTPS*) |
+| `SECURITY_CONTACT` | – | Contact for security reports in `/.well-known/security.txt`, e.g. `mailto:verwaltung@example.ch` |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
 | `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails |
@@ -156,6 +257,7 @@ flask --app laundry create-user <username> [--name "Display name"] [--admin]   #
 flask --app laundry make-admin <username>
 flask --app laundry seed-demo                                                  # demo data, development only
 flask --app laundry send-notifications [--loop SECONDS]                        # queue reminders, send mails
+flask --app laundry backup <file>                                              # consistent copy of the database
 ```
 
 In Docker: `docker exec -it --user 1000:1000 laundry flask --app laundry create-user ...` (see *Volumes and permissions*)
@@ -163,5 +265,6 @@ In Docker: `docker exec -it --user 1000:1000 laundry flask --app laundry create-
 ## Development
 
 Architecture, data model, routes, security notes and conventions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Reporting vulnerabilities: [SECURITY.md](SECURITY.md).
 Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
 The project page lives in `site/` and is deployed to GitHub Pages by `.github/workflows/pages.yml`.

@@ -1,4 +1,5 @@
 """Command line: flask --app laundry <command>."""
+import sqlite3
 import time
 from datetime import timedelta
 
@@ -87,7 +88,21 @@ def send_notifications_command(interval):
         time.sleep(interval)
 
 
+@click.command('backup')
+@click.argument('target', type=click.Path(dir_okay=False))
+@with_appcontext
+def backup_command(target):
+    """Sichert die Datenbank in die Datei TARGET (geht auch, während die App läuft)."""
+    # SQLite's online backup copies a consistent state, including what is still in the WAL file
+    dest = sqlite3.connect(target)
+    try:
+        get_db().backup(dest)
+    finally:
+        dest.close()
+    click.echo(f'Datenbank gesichert nach {target}.')
+
+
 def init_app(app):
     for command in (create_user_command, make_admin_command, seed_demo_command,
-                    send_notifications_command):
+                    send_notifications_command, backup_command):
         app.cli.add_command(command)

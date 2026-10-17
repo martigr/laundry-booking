@@ -1,15 +1,23 @@
-"""Login, session handling, CSRF protection and access decorators."""
+"""Login, session handling, CSRF protection, login throttling and access decorators."""
 import functools
 import secrets
+from datetime import timedelta
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, session, url_for
-from werkzeug.security import check_password_hash
+from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import mail, notifications
+from . import mail, notifications, slots
 from .db import get_db
 from .users import MIN_PASSWORD_LENGTH, UserError, get_user, get_user_by_username, set_password
 
 bp = Blueprint('auth', __name__)
+
+# Login throttling: failed attempts within LOGIN_WINDOW, per username and per client address
+LOGIN_WINDOW = timedelta(minutes=15)
+MAX_FAILURES_PER_USER = 10
+MAX_FAILURES_PER_IP = 20
+# Checked for unknown usernames, so a failed login takes as long whether the account exists or not
+_DUMMY_HASH = generate_password_hash(secrets.token_hex(16))
 
 
 def csrf_token():
@@ -28,8 +36,15 @@ def check_csrf():
 def load_user():
     user_id = session.get('user_id')
     g.user = get_user(user_id) if user_id else None
-    if user_id and g.user is None:
-        session.clear()  # user was deleted
+    # User deleted, or password changed since this session started (set_password bumps the version)
+    if user_id and (g.user is None or session.get('sv', 0) != g.user['session_version']):
+        session.clear()
+        g.user = None
+
+
+def keep_session():
+    """The current user changed their own password: keep this session, the others have ended."""
+    session['sv'] = get_user(g.user['id'])['session_version']
 
 
 def login_required(view):
@@ -51,16 +66,49 @@ def admin_required(view):
     return wrapped_view
 
 
+def _failure_keys(username):
+    return [f'user:{username}', f'ip:{request.remote_addr}']
+
+
+def login_blocked(username):
+    """True if this username or this client had too many failed logins lately."""
+    since = (slots.now() - LOGIN_WINDOW).isoformat(timespec='seconds')
+    counts = [get_db().execute('SELECT COUNT(*) FROM login_failures WHERE key = ? AND at > ?',
+                               (key, since)).fetchone()[0] for key in _failure_keys(username)]
+    return counts[0] >= MAX_FAILURES_PER_USER or counts[1] >= MAX_FAILURES_PER_IP
+
+
+def record_login_failure(username):
+    now = slots.now()
+    with get_db() as con:
+        con.execute('DELETE FROM login_failures WHERE at <= ?', ((now - LOGIN_WINDOW).isoformat(timespec='seconds'),))
+        con.executemany('INSERT INTO login_failures (key, at) VALUES (?, ?)',
+                        [(key, now.isoformat(timespec='seconds')) for key in _failure_keys(username)])
+
+
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username', '')
-        user = get_user_by_username(username)
-        if user and check_password_hash(user['password'], request.form.get('password', '')):
+        name = username.strip().lower()
+        # %r keeps line breaks in usernames from forging log lines
+        if login_blocked(name):
+            current_app.logger.warning('Login blocked (too many failures) for %r from %s', name, request.remote_addr)
+            return render_template('login.html', username=username,
+                                   error='Zu viele Fehlversuche. Bitte in 15 Minuten nochmals versuchen.'), 429
+        user = get_user_by_username(name)
+        valid = check_password_hash(user['password'] if user else _DUMMY_HASH, request.form.get('password', ''))
+        if user and valid:
+            with get_db() as con:
+                con.execute('DELETE FROM login_failures WHERE key = ?', (f'user:{name}',))
             session.clear()  # new session id content, against session fixation
             session['user_id'] = user['id']
+            session['sv'] = user['session_version']
             session.permanent = bool(request.form.get('remember'))
+            current_app.logger.info('Login of %r from %s', name, request.remote_addr)
             return redirect(url_for('bookings.index'))
+        record_login_failure(name)
+        current_app.logger.warning('Failed login for %r from %s', name, request.remote_addr)
         return render_template('login.html', error='Benutzername oder Passwort falsch.', username=username)
 
     if g.user:
@@ -84,7 +132,8 @@ def forgot_password():
             with get_db() as con:
                 users = con.execute(
                     'SELECT * FROM users WHERE (username = ? OR lower(email) = ?) '
-                    "AND email IS NOT NULL AND email != ''", (identifier, identifier)).fetchall()
+                    "AND email IS NOT NULL AND email != '' AND email_verified = 1",
+                    (identifier, identifier)).fetchall()
                 for user in users:
                     notifications.queue_password_reset(con, user)
         # Same answer whether or not the account exists, so nobody can probe for accounts
