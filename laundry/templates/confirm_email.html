@@ -1,0 +1,26 @@
+{% extends 'auth_base.html' %}
+{% block title %}E-Mail bestätigen – Waschküche{% endblock %}
+{% block form %}
+{% if invalid %}
+<div>
+  <h2>Link ungültig</h2>
+  <p class="hint" style="margin:6px 0 16px;font-size:15px">Der Link ist abgelaufen, oder die Adresse wurde seither geändert. Im Profil kannst du eine neue Bestätigungsmail anfordern.</p>
+  <a class="btn btn-primary" href="{{ url_for('profile.index') }}">Zum Profil</a>
+</div>
+{% elif done %}
+<div>
+  <h2>Adresse bestätigt</h2>
+  <p class="hint" style="margin:6px 0 16px;font-size:15px">Ab jetzt gehen deine Benachrichtigungen an {{ email }}.</p>
+  <a class="btn" href="{{ url_for('profile.index') }}">Zum Profil</a>
+</div>
+{% else %}
+<form class="login-form" method="post" style="max-width:none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <h2>E-Mail bestätigen</h2>
+    <p class="hint" style="margin:6px 0 0;font-size:15px">Gehört {{ email }} zu deinem Konto?</p>
+  </div>
+  <button type="submit" class="btn btn-primary" style="min-height:50px;font-size:16px">Ja, bestätigen</button>
+</form>
+{% endif %}
+{% endblock %}

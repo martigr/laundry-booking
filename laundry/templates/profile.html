@@ -29,6 +29,10 @@
       <label for="email">E-Mail-Adresse</label>
       <input type="email" id="email" name="email" value="{{ g.user['email'] or '' }}" autocomplete="email" maxlength="254">
       <span class="hint">Auch für „Passwort vergessen“. Leer lassen, wenn du keine Mails willst.</span>
+      {% if g.user['email'] and not g.user['email_verified'] %}
+      <span class="hint"><strong>Noch nicht bestätigt.</strong> Du bekommst erst Mails, wenn du den Link in der Bestätigungsmail geöffnet hast.
+        {% if mail_enabled %}<button type="submit" form="verify-form" class="linklike">Bestätigungsmail nochmals senden</button>{% endif %}</span>
+      {% endif %}
     </div>
     <div class="field">
       <label for="reminder_minutes">Erinnerung an meine Buchungen</label>
@@ -40,6 +44,10 @@
     </div>
     <label class="check"><input type="checkbox" name="notify_freed" value="1"{{ ' checked' if g.user['notify_freed'] }}>Mail, wenn in den nächsten 7 Tagen ein Slot frei wird</label>
     <div><button type="submit" class="btn btn-dark">Speichern</button></div>
+  </form>
+  <form id="verify-form" method="post" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="verify_email">
   </form>
 
   <form class="card" method="post">

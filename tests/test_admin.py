@@ -40,8 +40,11 @@ def test_cannot_delete_self(client, query, login):
 
 def test_reset_password(client, login):
     t = login('alice')
-    page = client.post('/admin/users/2/reset', data={'csrf_token': t}, follow_redirects=True).get_data(as_text=True)
-    new_password = page.split('Neues Passwort für Bob: ')[1].split('<')[0]
+    r = client.post('/admin/users/2/reset', data={'csrf_token': t})
+    assert r.status_code == 200  # shown in this response, not via a redirect and the session
+    new_password = r.get_data(as_text=True).split('Neues Passwort für Bob: <code>')[1].split('<')[0]
+    assert new_password not in str(client.get_cookie('session').value)
+    assert new_password not in client.get('/admin').get_data(as_text=True)  # only once
     client.post('/logout', data={'csrf_token': t})
     login('bob', new_password)
     assert client.get('/').status_code == 200

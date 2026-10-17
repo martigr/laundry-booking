@@ -35,7 +35,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
   admins can cancel any booking
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
-  every mail has a one-click unsubscribe link
+  addresses are confirmed by a link first; every mail has a one-click unsubscribe link
 - Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
   sessions end on password change; see [SECURITY.md](SECURITY.md)
 - German UI
@@ -187,8 +187,10 @@ Update at least monthly. To hear about security fixes, watch the repository on G
 `docker compose logs web` shows requests and logins. Failed logins are logged as
 `Failed login for 'name' from <address>`, blocked ones as `Login blocked`; after 10 failures for a
 username or 20 from one address within 15 minutes, logins are refused for the rest of that time.
-Logs contain IP addresses and usernames, and the access log the paths of password-reset links
-(valid 1 hour, single use). `docker-compose.yml` therefore keeps at most 3 × 10 MB per container.
+Logs contain IP addresses and usernames; `docker-compose.yml` therefore keeps at most 3 × 10 MB per
+container. The tokens of mail links (password reset, unsubscribe, confirm address) appear as `***`
+in the app's access log. Your reverse proxy logs them in full if it keeps an access log (nginx does
+by default, Caddy doesn't): turn it off for these paths or keep those logs short and private.
 
 ### Security checklist
 
@@ -221,7 +223,8 @@ BASE_URL=https://waschkueche.example.ch
 Any other SMTP provider works the same way. Mails are queued in the database and sent by the
 `notifier`; if the mail server is unreachable they are retried (up to 5 times) and dropped once
 they are no longer relevant (e.g. a reminder after the slot started). Residents enter their address
-and choose their notifications under *Profil*; the "Passwort vergessen?" link on the login page
+and choose their notifications under *Profil*; they get mails only after confirming the address
+with the link in the first mail; the "Passwort vergessen?" link on the login page
 only appears when mail is configured.
 
 For local development, [Mailpit](https://mailpit.axllent.org/) catches all mails in a web inbox:

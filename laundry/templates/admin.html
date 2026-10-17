@@ -8,6 +8,13 @@
   </div>
 </div>
 
+{% if new_password %}
+<div class="flash flash-ok" role="status">
+  Neues Passwort für {{ new_password.name }}: <code>{{ new_password.password }}</code><br>
+  Es wird nur jetzt angezeigt. Gib es weiter und bitte darum, es im Profil zu ändern.
+</div>
+{% endif %}
+
 <div class="split">
   <section class="card split-main" aria-labelledby="users-h">
     <h2 id="users-h">Benutzer</h2>
@@ -21,7 +28,7 @@
           <tr>
             <td><strong>{{ u['display_name'] }}</strong></td>
             <td>{{ u['username'] }}</td>
-            <td>{% if u['email'] %}{{ u['email'] }}{% else %}<span class="hint">–</span>{% endif %}</td>
+            <td>{% if u['email'] %}{{ u['email'] }}{% if not u['email_verified'] %} <span class="hint">(unbestätigt)</span>{% endif %}{% else %}<span class="hint">–</span>{% endif %}</td>
             <td>{% if u['is_admin'] %}<span class="badge admin">Admin</span>{% else %}<span class="badge">Bewohner</span>{% endif %}</td>
             <td class="actions">
               {% if u['id'] == g.user['id'] %}

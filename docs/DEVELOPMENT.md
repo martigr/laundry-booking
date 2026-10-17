@@ -29,8 +29,9 @@ laundry/                  # the application package
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
 ├── auth.py               # bp "auth": login/logout, login throttling, CSRF, login_required/admin_required
 ├── security.py           # security headers (CSP etc.), /.well-known/security.txt
+├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
-├── profile.py            # bp "profile": display name, password
+├── profile.py            # bp "profile": display name, mail settings, password; confirm address, unsubscribe
 ├── admin.py              # bp "admin": users, settings
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
@@ -46,7 +47,7 @@ laundry/                  # the application package
     ├── profile.html      # display name, mail notifications, password
     ├── admin.html
     ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
-    ├── forgot_password.html, reset_password.html, unsubscribe.html
+    ├── forgot_password.html, reset_password.html, unsubscribe.html, confirm_email.html
 tests/
 ├── conftest.py           # fixtures: app, client, login, csrf, query, reservations
 ├── test_auth.py          # login, logout, CSRF, SECRET_KEY, profile
@@ -113,6 +114,7 @@ password      TEXT  werkzeug hash       slot      TEXT  one of SLOTS names
 display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE CASCADE
 is_admin      INTEGER 0/1               UNIQUE (day, slot)
 email         TEXT  optional
+email_verified INTEGER 0/1  mails only go out when 1
 reminder_minutes INTEGER 0 = off
 notify_freed  INTEGER 0/1
 session_version INTEGER  +1 on every password change
@@ -189,14 +191,15 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
-| `/profile` | GET/POST | `profile.index` | user | `action=name`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
+| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
-| `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once; ends the user's sessions |
+| `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
 | `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
 | `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
 | `/passwort-vergessen` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
 | `/passwort-zuruecksetzen/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
+| `/email-bestaetigen/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
 | `/abbestellen/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
@@ -247,6 +250,13 @@ All mail goes through the `notifications` table (outbox pattern):
 Why: a request never waits for the mail server, an outage only delays mails, and with several
 Gunicorn workers nothing is sent twice. Never call `mail.deliver()` from a view.
 
+Addresses must be confirmed: saving a new address in the profile (or an admin creating a user
+with one) sets `email_verified = 0` and queues `queue_email_verification()` (at most one per user
+and address in 15 minutes; "Bestätigungsmail nochmals senden" in the profile). Reminders,
+freed-slot mails and reset links only go to confirmed addresses, so a typo can't hand a stranger
+the account. Addresses that existed before the column was added count as confirmed (step in
+`init_db()`).
+
 Rules: reminders go out within `reminder_minutes` before the slot start; freed slots are
 announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled.
 Without `SMTP_HOST`/`MAIL_FROM` nothing is queued and the "Passwort vergessen?" link is hidden.
@@ -289,6 +299,15 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
   off and need a POST (link scanners only GET). `queue_password_reset()` queues at most one reset
   mail per user within `RESET_INTERVAL` (15 min), since anyone can ask for one.
+- **Admin password reset:** the new password is rendered into the response of the POST, not
+  flashed: Flask sessions are signed but not encrypted, so a flash message would sit readable in
+  the cookie. A reload re-submits the form and creates another password.
+- **Access log:** the Dockerfile starts Gunicorn with `--logger-class
+  laundry.accesslog.RedactingLogger`, which replaces the token in `/passwort-zuruecksetzen/`,
+  `/abbestellen/` and `/email-bestaetigen/` paths with `***` in every log field. Reverse proxy logs
+  are the operator's job (README, *Logs*).
+- **Last admin:** an admin can't delete themselves (view and UI), and there is no way to remove
+  admin rights, so at least one admin always remains.
 - **Reporting:** `SECURITY.md` (GitHub private advisories) and `/.well-known/security.txt`.
 - **Container:** `docker-entrypoint.sh` starts as root only to `chown` the data folder and the
   `laundry.db*` files to `PUID:PGID` (default 1000), then `exec setpriv` drops to that user
@@ -335,7 +354,7 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
 - **test:** `ruff check .`, `pytest`, `shellcheck` on the shell scripts
 - **docker:** `docker build`, then `scripts/docker-smoke-test.sh`, which starts the image three
   times: with a named volume (health check, app runs as UID 1000, `create-user` via
-  `docker exec`), with a root-owned host folder and `PUID/PGID` (ownership gets fixed) and
+  `docker exec`, reset token not in the access log), with a root-owned host folder and `PUID/PGID` (ownership gets fixed) and
   with `--user` on a folder it can't write (must stop with the clear error message).
 
 **Audit** (`.github/workflows/audit.yml`) runs `pip-audit -r requirements-dev.txt` on every pull

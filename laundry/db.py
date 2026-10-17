@@ -19,6 +19,7 @@ SCHEMA = [
         email TEXT,
         reminder_minutes INTEGER NOT NULL DEFAULT 0,
         notify_freed INTEGER NOT NULL DEFAULT 0,
+        email_verified INTEGER NOT NULL DEFAULT 0,
         session_version INTEGER NOT NULL DEFAULT 0
     )
     """,
@@ -69,6 +70,7 @@ ADDED_COLUMNS = [
     ('users', 'reminder_minutes', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'notify_freed', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0'),
+    ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0'),
 ]
 
 DEFAULT_SETTINGS = {'horizon_weeks': '4'}
@@ -130,9 +132,14 @@ def init_db():
         con.execute('BEGIN IMMEDIATE')
         for statement in SCHEMA:
             con.execute(statement)
+        added = []
         for table, column, definition in ADDED_COLUMNS:
             if column not in [r['name'] for r in con.execute(f'PRAGMA table_info({table})')]:
                 con.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+                added.append(column)
+        if 'email_verified' in added:
+            # Addresses from before verification existed keep getting mails
+            con.execute("UPDATE users SET email_verified = 1 WHERE email IS NOT NULL AND email != ''")
 
         cfg = current_app.config
         user_count = con.execute('SELECT COUNT(*) FROM users').fetchone()[0]

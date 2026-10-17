@@ -132,7 +132,8 @@ def forgot_password():
             with get_db() as con:
                 users = con.execute(
                     'SELECT * FROM users WHERE (username = ? OR lower(email) = ?) '
-                    "AND email IS NOT NULL AND email != ''", (identifier, identifier)).fetchall()
+                    "AND email IS NOT NULL AND email != '' AND email_verified = 1",
+                    (identifier, identifier)).fetchall()
                 for user in users:
                     notifications.queue_password_reset(con, user)
         # Same answer whether or not the account exists, so nobody can probe for accounts

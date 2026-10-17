@@ -41,6 +41,7 @@ flask --app laundry --debug run              # dev server on :5000
   test that builds the old schema.
 - Mail only through the outbox: queue with the `notifications.queue_*()` functions (unique `dedupe_key`),
   `flask send-notifications` sends. Never call `mail.deliver()` from a view. Tests use the `mailbox` fixture.
+  Mail to a user's address only when `users.email_verified = 1` (except the verification mail itself).
 - No inline `<script>` or `on*=` handlers: the CSP (`security.CSP`) blocks them; JS goes into `static/*.js`.
 - Keep it dependency-light: no ORM, no JS framework, no build step, no external CDNs or fonts.
   Dependencies are pinned in `requirements*.txt`.

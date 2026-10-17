@@ -1,11 +1,12 @@
-"""Own display name and password."""
+"""Own display name, mail settings and password; links from mails (confirm address, unsubscribe)."""
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash
 
+from . import mail
 from .auth import keep_session, login_required
 from .db import get_db
-from .notifications import REMINDER_CHOICES, read_unsubscribe_token
-from .users import MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, UserError, clean_email, set_password
+from .notifications import REMINDER_CHOICES, queue_email_verification, read_unsubscribe_token, read_verify_token
+from .users import MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, UserError, clean_email, get_user, set_password
 
 bp = Blueprint('profile', __name__)
 
@@ -43,10 +44,23 @@ def index():
             abort(400)
         if minutes not in dict(REMINDER_CHOICES):
             abort(400)
+        changed = email != g.user['email']
         with get_db() as con:
             con.execute('UPDATE users SET email = ?, reminder_minutes = ?, notify_freed = ? WHERE id = ?',
                         (email, minutes, int(bool(request.form.get('notify_freed'))), g.user['id']))
-        flash('Benachrichtigungen gespeichert.', 'ok')
+            if changed:
+                con.execute('UPDATE users SET email_verified = 0 WHERE id = ?', (g.user['id'],))
+                queue_email_verification(con, get_user(g.user['id']))
+        if changed and email and mail.is_configured():
+            flash('Benachrichtigungen gespeichert. Wir haben dir eine Mail geschickt: Bitte bestätige '
+                  'deine Adresse über den Link darin, erst dann bekommst du Mails.', 'ok')
+        else:
+            flash('Benachrichtigungen gespeichert.', 'ok')
+    elif action == 'verify_email':
+        if g.user['email'] and not g.user['email_verified']:
+            with get_db() as con:
+                queue_email_verification(con, g.user)
+            flash(f'Bestätigungsmail an {g.user["email"]} verschickt.', 'ok')
     elif action == 'password':
         if not check_password_hash(g.user['password'], request.form.get('old_password', '')):
             flash('Das aktuelle Passwort ist falsch.', 'warn')
@@ -60,6 +74,22 @@ def index():
             except UserError as e:
                 flash(str(e), 'warn')
     return redirect(url_for('profile.index'))
+
+
+@bp.route('/email-bestaetigen/<token>', methods=['GET', 'POST'])
+def confirm_email(token):
+    """Link in the verification mail. GET only shows a button, so a link scanner at a wrong
+    recipient's mail provider can't confirm the address."""
+    data = read_verify_token(token)
+    user = get_user(data[0]) if data else None
+    if user is None or user['email'] != data[1]:  # also when the address changed since
+        return render_template('confirm_email.html', invalid=True), 400
+    done = bool(user['email_verified'])
+    if request.method == 'POST' and not done:
+        with get_db() as con:
+            con.execute('UPDATE users SET email_verified = 1 WHERE id = ? AND email = ?', (user['id'], data[1]))
+        done = True
+    return render_template('confirm_email.html', email=data[1], done=done)
 
 
 @bp.route('/abbestellen/<token>', methods=['GET', 'POST'])

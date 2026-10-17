@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from laundry import auth, create_app, slots
+from laundry.db import get_db
 
 NOW = datetime(2026, 10, 15, 14, 20)
 PASSWORD = 'secret1234'
@@ -209,6 +210,9 @@ def test_password_reset_mails_are_throttled(app, client, csrf, login, mailbox, m
     t = login('bob')
     client.post('/profile', data={'action': 'notifications', 'email': 'bob@example.ch', 'reminder_minutes': '0',
                                   'csrf_token': t})
+    with app.app_context(), get_db() as con:
+        con.execute("UPDATE users SET email_verified = 1 WHERE username = 'bob'")
+        con.execute('DELETE FROM notifications')
     client.post('/logout', data={'csrf_token': csrf()})
 
     def ask(minutes):
@@ -252,3 +256,24 @@ def test_backup_command(app, tmp_path):
     con = sqlite3.connect(target)
     assert con.execute('SELECT username FROM users ORDER BY username').fetchall() == [('alice',), ('bob',)]
     con.close()
+
+
+# --- Access log ----------------------------------------------------------------------------------
+
+def test_access_log_hides_tokens():
+    from types import SimpleNamespace
+
+    from gunicorn.config import Config
+
+    from laundry.accesslog import RedactingLogger
+    environ = {'REQUEST_METHOD': 'GET', 'RAW_URI': '/passwort-zuruecksetzen/SECRET.tok-en?x=1',
+               'PATH_INFO': '/passwort-zuruecksetzen/SECRET.tok-en', 'SERVER_PROTOCOL': 'HTTP/1.1',
+               'HTTP_REFERER': 'https://wk.test/abbestellen/SECRET2'}
+    resp = SimpleNamespace(status='200 OK', sent=10, headers=[])
+    req = SimpleNamespace(headers=[('REFERER', 'https://wk.test/email-bestaetigen/SECRET3')])
+    atoms = RedactingLogger(Config()).atoms(resp, req, environ, timedelta(seconds=1))
+    assert atoms['r'] == 'GET /passwort-zuruecksetzen/***?x=1 HTTP/1.1'
+    assert atoms['U'] == '/passwort-zuruecksetzen/***'
+    assert atoms['f'] == 'https://wk.test/abbestellen/***'
+    assert atoms['{raw_uri}e'] == '/passwort-zuruecksetzen/***?x=1'
+    assert 'SECRET' not in str(atoms)
