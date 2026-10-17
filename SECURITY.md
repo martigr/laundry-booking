@@ -45,6 +45,11 @@ Out of scope:
 Please test only against your own instance (`flask --app laundry --debug seed-demo` gives you
 one in a minute), never against someone else's building.
 
+## Dependencies
+
+Dependencies are pinned in `requirements*.txt` and GitHub Actions to commit SHAs. Dependabot
+proposes updates weekly, and `pip-audit` checks the pins on every pull request and every Monday.
+
 ## Security design
 
 How the app protects sessions, forms, passwords and mail links is described in

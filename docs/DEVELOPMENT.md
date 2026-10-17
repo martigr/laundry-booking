@@ -62,7 +62,10 @@ scripts/docker-smoke-test.sh  # starts a built image and checks health, user, vo
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
+requirements-audit.txt    # pip-audit, only for the audit workflow
 .github/workflows/ci.yml  # ruff, pytest, shellcheck + Docker build and smoke test
+.github/workflows/audit.yml  # pip-audit of the pinned dependencies (also weekly)
+.github/dependabot.yml    # weekly update PRs for pip packages and GitHub Actions
 .github/workflows/pages.yml  # deploys site/ + docs/screenshots to GitHub Pages
 site/index.html           # project page (GitHub Pages), self-contained HTML/CSS
 ```
@@ -334,6 +337,20 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
   times: with a named volume (health check, app runs as UID 1000, `create-user` via
   `docker exec`), with a root-owned host folder and `PUID/PGID` (ownership gets fixed) and
   with `--user` on a folder it can't write (must stop with the clear error message).
+
+**Audit** (`.github/workflows/audit.yml`) runs `pip-audit -r requirements-dev.txt` on every pull
+request, every push to `main` and every Monday, because new vulnerabilities are published without
+any change in this repository. Locally: `pip install -r requirements-audit.txt && pip-audit -r
+requirements-dev.txt`.
+
+**Dependabot** (`.github/dependabot.yml`) opens one grouped PR per week for the pip packages and one
+for the GitHub Actions. CI and the audit run on it like on any PR; merge it when they are green.
+
+**Workflow hardening:** every workflow sets `permissions` explicitly (`contents: read`, plus what
+Pages needs), actions are pinned to a commit SHA with the version as a comment
+(`actions/checkout@<sha>  # v5`), and `actions/checkout` runs with `persist-credentials: false`, so
+the token isn't left in `.git/config` for later steps. When adding an action, pin it the same way;
+Dependabot keeps the SHAs current.
 
 Run the Docker part locally with
 `docker build -t laundry-booking:ci . && scripts/docker-smoke-test.sh`.

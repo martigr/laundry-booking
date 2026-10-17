@@ -1,0 +1,2 @@
+# Only for the audit workflow (.github/workflows/audit.yml); pinned so Dependabot keeps it current
+pip-audit==2.10.1
