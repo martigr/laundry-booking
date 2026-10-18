@@ -268,3 +268,7 @@ Architecture, data model, routes, security notes and conventions: [docs/DEVELOPM
 Reporting vulnerabilities: [SECURITY.md](SECURITY.md).
 Guidance for Claude Code: [CLAUDE.md](CLAUDE.md).
 The project page lives in `site/` and is deployed to GitHub Pages by `.github/workflows/pages.yml`.
+
+## License
+
+[MIT](LICENSE)
