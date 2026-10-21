@@ -77,6 +77,20 @@ This starts two containers from the same image and the same `/data` volume:
 - `notifier`: runs `flask --app laundry send-notifications --loop 60`, which queues due reminders and
   sends all waiting mails once a minute. Without mail settings it just idles.
 
+### Prebuilt image
+
+Every release publishes the image to the GitHub Container Registry (`linux/amd64` and
+`linux/arm64`), so you don't need to build it yourself:
+
+```bash
+docker pull ghcr.io/martigr/laundry-booking:1   # tags: latest, 1, 1.0, 1.0.0
+```
+
+To use it with Docker Compose, replace `build: .` and `image: laundry-booking` in both services of
+`docker-compose.yml` with `image: ghcr.io/martigr/laundry-booking:1`, then `docker compose up -d`.
+In the `docker run` example below, use `ghcr.io/martigr/laundry-booking:1` instead of building.
+The tag `1` follows all 1.x releases; pin a full version (`1.0.0`) to update only by hand.
+
 ### Plain `docker run`
 
 ```bash
@@ -180,6 +194,9 @@ database file (delete `laundry.db-wal` and `laundry.db-shm` next to it).
 git pull
 docker compose build --pull && docker compose up -d   # --pull also gets security fixes of the base image
 ```
+
+With the prebuilt image: `docker compose pull && docker compose up -d`. Releases are listed under
+*Releases* on GitHub.
 
 Update at least monthly. To hear about security fixes, watch the repository on GitHub
 (*Watch → Custom → Security alerts*).
