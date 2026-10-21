@@ -236,7 +236,7 @@ SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 ### Calendar subscription
 
 Every resident can create a personal calendar link under *Profil → Kalender abonnieren*
-(`BASE_URL/kalender/<token>.ics`). It contains only their own bookings. Calendar apps fetch it
+(`BASE_URL/calendar/<token>.ics`). It contains only their own bookings. Calendar apps fetch it
 themselves, so new bookings show up after the next refresh, not instantly:
 
 - **iPhone/iPad:** tap the `webcal://` link in the profile, or *Settings → Calendar → Accounts →

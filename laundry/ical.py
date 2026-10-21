@@ -27,7 +27,7 @@ def new_token():
 
 
 def feed_url(token):
-    return link(f'/kalender/{token}.ics')
+    return link(f'/calendar/{token}.ics')
 
 
 def webcal_url(token):
@@ -97,7 +97,7 @@ def build_feed(user_id):
     return ''.join(fold(line) + '\r\n' for line in lines)
 
 
-@bp.route('/kalender/<token>.ics')
+@bp.route('/calendar/<token>.ics')
 def feed(token):
     row = get_db().execute('SELECT id FROM users WHERE calendar_token = ?', (token,)).fetchone()
     if row is None:

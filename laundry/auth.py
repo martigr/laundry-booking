@@ -122,7 +122,7 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-@bp.route('/passwort-vergessen', methods=['GET', 'POST'])
+@bp.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if not mail.is_configured():
         abort(404)
@@ -143,7 +143,7 @@ def forgot_password():
     return render_template('forgot_password.html')
 
 
-@bp.route('/passwort-zuruecksetzen/<token>', methods=['GET', 'POST'])
+@bp.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     user_id = notifications.read_reset_token(token)
     if user_id is None:

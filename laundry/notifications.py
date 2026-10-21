@@ -101,7 +101,7 @@ def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None):
 
 def _footer(user_id, kind, what):
     return (f'\n--\nDu bekommst diese Mail, weil du {what} eingeschaltet hast.\n'
-            f'Abbestellen: {link("/abbestellen/" + unsubscribe_token(user_id, kind))}\n'
+            f'Abbestellen: {link("/unsubscribe/" + unsubscribe_token(user_id, kind))}\n'
             f'Einstellungen: {link("/profile")}\n')
 
 
@@ -176,7 +176,7 @@ def queue_password_reset(con, user):
     body = (f'Hallo {user["display_name"]}\n\n'
             f'Für dein Konto „{user["username"]}“ wurde ein neues Passwort angefordert.\n'
             f'Über diesen Link setzt du es (gültig für 1 Stunde):\n\n'
-            f'{link("/passwort-zuruecksetzen/" + reset_token(user))}\n\n'
+            f'{link("/reset-password/" + reset_token(user))}\n\n'
             f'Warst du das nicht? Dann ignoriere diese Mail, dein Passwort bleibt unverändert.\n')
     _queue(con, f'reset:{user["id"]}:{now.isoformat(timespec="seconds")}', user['email'],
            'Waschküche: Passwort zurücksetzen', body, expires_at=now + RESET_VALID)
@@ -194,7 +194,7 @@ def queue_email_verification(con, user):
         return
     body = (f'Hallo {user["display_name"]}\n\n'
             f'Bitte bestätige, dass diese Adresse zu deinem Konto „{user["username"]}“ gehört:\n\n'
-            f'{link("/email-bestaetigen/" + verify_token(user["id"], user["email"]))}\n\n'
+            f'{link("/verify-email/" + verify_token(user["id"], user["email"]))}\n\n'
             f'Erst danach bekommst du Erinnerungen und kannst dein Passwort per Mail zurücksetzen.\n'
             f'Der Link gilt 7 Tage. Hast du dich nicht angemeldet? Dann ignoriere diese Mail.\n')
     _queue(con, f'verify:{user["id"]}:{now.isoformat(timespec="seconds")}:{user["email"]}', user['email'],

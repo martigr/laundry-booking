@@ -66,7 +66,7 @@ def test_reminder_is_sent_once_at_the_right_time(app, client, login, mailbox, mo
     to, subject, body = mailbox[0]
     assert to == 'bob@example.ch'
     assert subject == 'Waschküche: heute Abend (17:00 – 22:00)'
-    assert 'https://wk.test/abbestellen/' in body
+    assert 'https://wk.test/unsubscribe/' in body
 
     at(monkeypatch, 2026, 10, 15, 16, 30)
     run(app)                              # no second mail
@@ -129,7 +129,7 @@ def test_unsubscribe_link(app, client, login, mailbox, query):
     client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
     run(app)
-    path = link_in(mailbox[0][2], '/abbestellen/')
+    path = link_in(mailbox[0][2], '/unsubscribe/')
 
     other = app.test_client()  # works without being logged in
     assert 'Ja, abbestellen' in other.get(path).get_data(as_text=True)
@@ -138,7 +138,7 @@ def test_unsubscribe_link(app, client, login, mailbox, query):
         s['csrf'] = 'x'
     assert 'Abbestellt' in other.post(path, data={'csrf_token': 'x'}).get_data(as_text=True)
     assert query("SELECT notify_freed, reminder_minutes FROM users WHERE username = 'alice'") == [(0, 60)]
-    assert other.get('/abbestellen/forged').status_code == 404
+    assert other.get('/unsubscribe/forged').status_code == 404
 
 
 def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
@@ -146,12 +146,12 @@ def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
     client.post('/logout', data={'csrf_token': csrf()})
 
     for identifier in ['bob@example.ch', 'nobody']:
-        r = client.post('/passwort-vergessen', data={'identifier': identifier, 'csrf_token': csrf()},
+        r = client.post('/forgot-password', data={'identifier': identifier, 'csrf_token': csrf()},
                         follow_redirects=True)
         assert 'Falls zu diesem Konto' in r.get_data(as_text=True)
     run(app)
     assert [m[0] for m in mailbox] == ['Bob@Example.ch']
-    path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
+    path = link_in(mailbox[0][2], '/reset-password/')
 
     assert client.get(path).status_code == 200
     client.post(path, data={'password': 'brandnew12', 'csrf_token': csrf()})
@@ -162,9 +162,9 @@ def test_password_reset(app, client, csrf, login, mailbox, monkeypatch):
 
 def test_password_reset_link_expires(app, client, csrf, login, mailbox, monkeypatch):
     set_prefs(client, login, 'bob', 'bob@example.ch')
-    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+    client.post('/forgot-password', data={'identifier': 'bob', 'csrf_token': csrf()})
     run(app)
-    path = link_in(mailbox[0][2], '/passwort-zuruecksetzen/')
+    path = link_in(mailbox[0][2], '/reset-password/')
 
     import itsdangerous.timed
     real = itsdangerous.timed.TimestampSigner.get_timestamp
@@ -174,7 +174,7 @@ def test_password_reset_link_expires(app, client, csrf, login, mailbox, monkeypa
 
 def test_failed_mail_is_retried(app, client, csrf, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'bob', 'bob@example.ch')
-    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+    client.post('/forgot-password', data={'identifier': 'bob', 'csrf_token': csrf()})
 
     def broken(*args):
         raise OSError('connection refused')
@@ -190,7 +190,7 @@ def test_without_mail_config_nothing_is_queued(tmp_path, monkeypatch):
     monkeypatch.setattr(slots, 'now', lambda: NOW)
     app = create_app({'TESTING': True, 'SECRET_KEY': 'test', 'DATABASE': str(tmp_path / 'x.db')})
     client = app.test_client()
-    assert client.get('/passwort-vergessen').status_code == 404
+    assert client.get('/forgot-password').status_code == 404
     assert 'Passwort vergessen' not in client.get('/login').get_data(as_text=True)
     with app.app_context():
         assert notifications.run_once() == (0, 0)
@@ -269,7 +269,7 @@ def test_new_address_must_be_confirmed(app, client, login, csrf, mailbox, monkey
     run(app)
     assert [m[1] for m in mailbox] == ['Waschküche: E-Mail-Adresse bestätigen']  # no reminder yet
 
-    path = link_in(mailbox[0][2], '/email-bestaetigen/')
+    path = link_in(mailbox[0][2], '/verify-email/')
     other = app.test_client()  # works without being logged in
     assert 'Ja, bestätigen' in other.get(path).get_data(as_text=True)
     assert query("SELECT email_verified FROM users WHERE username = 'bob'") == [(0,)]  # GET changes nothing
@@ -291,7 +291,7 @@ def test_new_address_must_be_confirmed(app, client, login, csrf, mailbox, monkey
 def test_reset_mail_only_to_confirmed_address(app, client, csrf, login, mailbox):
     set_prefs(client, login, 'bob', 'bob@example.ch', verified=False)
     client.post('/logout', data={'csrf_token': csrf()})
-    client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+    client.post('/forgot-password', data={'identifier': 'bob', 'csrf_token': csrf()})
     run(app)
     assert [m[1] for m in mailbox] == ['Waschküche: E-Mail-Adresse bestätigen']
 
@@ -307,10 +307,10 @@ def test_verification_mail_can_be_resent(app, client, login, mailbox, monkeypatc
 
 
 def test_invalid_or_expired_verification_link(app, client, login, mailbox, monkeypatch):
-    assert client.get('/email-bestaetigen/forged').status_code == 400
+    assert client.get('/verify-email/forged').status_code == 400
     set_prefs(client, login, 'bob', 'bob@example.ch', verified=False)
     run(app)
-    path = link_in(mailbox[0][2], '/email-bestaetigen/')
+    path = link_in(mailbox[0][2], '/verify-email/')
     import itsdangerous.timed
     real = itsdangerous.timed.TimestampSigner.get_timestamp
     monkeypatch.setattr(itsdangerous.timed.TimestampSigner, 'get_timestamp', lambda self: real(self) + 8 * 86400)

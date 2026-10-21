@@ -8,7 +8,7 @@ import re
 from gunicorn.glogging import Logger
 
 # Path segment after these prefixes is a token (see the routes in auth.py, profile.py and ical.py)
-TOKEN_PATH = re.compile(r'(/(?:passwort-zuruecksetzen|abbestellen|email-bestaetigen|kalender)/)[^/?#\s]+')
+TOKEN_PATH = re.compile(r'(/(?:reset-password|unsubscribe|verify-email|calendar)/)[^/?#\s]+')
 
 
 def redact(text):
