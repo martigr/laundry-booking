@@ -39,8 +39,8 @@ def test_profile_creates_a_calendar_link(client, login, query):
     token = calendar_token(query)
     assert len(token) >= 40
     page = client.get('/profile').get_data(as_text=True)
-    assert f'https://wk.test/kalender/{token}.ics' in page
-    assert f'webcal://wk.test/kalender/{token}.ics' in page
+    assert f'https://wk.test/calendar/{token}.ics' in page
+    assert f'webcal://wk.test/calendar/{token}.ics' in page
 
 
 def test_feed_contains_only_own_bookings(app, client, login, query):
@@ -49,7 +49,7 @@ def test_feed_contains_only_own_bookings(app, client, login, query):
     create_link(client, login)
     client.post('/logout', data={'csrf_token': login('bob')})
 
-    resp = client.get(f'/kalender/{calendar_token(query)}.ics')  # no session needed
+    resp = client.get(f'/calendar/{calendar_token(query)}.ics')  # no session needed
     assert resp.status_code == 200
     assert resp.mimetype == 'text/calendar'
     assert resp.headers['Cache-Control'] == 'no-store'
@@ -68,7 +68,7 @@ def test_feed_contains_only_own_bookings(app, client, login, query):
 def test_feed_merges_adjacent_slots_and_converts_winter_time(app, client, login, query):
     book(app, 'bob', ('2026-11-02', 'Nachmittag'), ('2026-11-02', 'Abend'), ('2026-11-03', 'Abend'))
     create_link(client, login)
-    text = client.get(f'/kalender/{calendar_token(query)}.ics').get_data(as_text=True)
+    text = client.get(f'/calendar/{calendar_token(query)}.ics').get_data(as_text=True)
     first, second = events(text)
     # Winter time: UTC+1
     assert 'DTSTART:20261102T110000Z' in first and 'DTEND:20261102T210000Z' in first
@@ -81,7 +81,7 @@ def test_feed_merges_adjacent_slots_and_converts_winter_time(app, client, login,
 def test_feed_keeps_four_weeks_of_past_bookings(app, client, login, query):
     book(app, 'bob', ('2026-09-16', 'Abend'), ('2026-09-18', 'Abend'), ('2026-10-15', 'Vormittag'))
     create_link(client, login)
-    text = client.get(f'/kalender/{calendar_token(query)}.ics').get_data(as_text=True)
+    text = client.get(f'/calendar/{calendar_token(query)}.ics').get_data(as_text=True)
     starts = [line for line in unfold(text).split('\r\n') if line.startswith('DTSTART')]
     assert starts == ['DTSTART:20260918T150000Z', 'DTSTART:20261015T050000Z']
 
@@ -89,7 +89,7 @@ def test_feed_keeps_four_weeks_of_past_bookings(app, client, login, query):
 def test_cancelled_booking_leaves_the_feed(app, client, login, query):
     book(app, 'bob', ('2026-10-16', 'Abend'))
     token = create_link(client, login)
-    url = f'/kalender/{calendar_token(query)}.ics'
+    url = f'/calendar/{calendar_token(query)}.ics'
     assert len(events(client.get(url).get_data(as_text=True))) == 1
     rid = query('SELECT id FROM reservations')[0][0]
     client.post(f'/cancel/{rid}', data={'csrf_token': token})
@@ -97,10 +97,10 @@ def test_cancelled_booking_leaves_the_feed(app, client, login, query):
 
 
 def test_unknown_token_is_404(client, login, query):
-    assert client.get('/kalender/nope.ics').status_code == 404
+    assert client.get('/calendar/nope.ics').status_code == 404
     create_link(client, login)
-    assert client.get('/kalender/.ics').status_code == 404
-    assert client.get(f'/kalender/{calendar_token(query)}').status_code == 404  # without .ics
+    assert client.get('/calendar/.ics').status_code == 404
+    assert client.get(f'/calendar/{calendar_token(query)}').status_code == 404  # without .ics
 
 
 def test_renewing_the_link_disables_the_old_one(client, login, query):
@@ -110,8 +110,8 @@ def test_renewing_the_link_disables_the_old_one(client, login, query):
     assert 'Der alte funktioniert nicht mehr' in resp.get_data(as_text=True)
     new = calendar_token(query)
     assert new != old
-    assert client.get(f'/kalender/{old}.ics').status_code == 404
-    assert client.get(f'/kalender/{new}.ics').status_code == 200
+    assert client.get(f'/calendar/{old}.ics').status_code == 404
+    assert client.get(f'/calendar/{new}.ics').status_code == 200
 
 
 def test_deleting_the_link(client, login, query):
@@ -119,7 +119,7 @@ def test_deleting_the_link(client, login, query):
     old = calendar_token(query)
     client.post('/profile', data={'action': 'calendar_delete', 'csrf_token': token})
     assert calendar_token(query) is None
-    assert client.get(f'/kalender/{old}.ics').status_code == 404
+    assert client.get(f'/calendar/{old}.ics').status_code == 404
     assert 'Kalender-Link erstellen' in client.get('/profile').get_data(as_text=True)
 
 
@@ -137,7 +137,7 @@ def test_deleted_user_feed_is_gone(client, login, query):
     admin = login('alice')
     bob_id = query("SELECT id FROM users WHERE username = 'bob'")[0][0]
     client.post(f'/admin/users/{bob_id}/delete', data={'csrf_token': admin})
-    assert client.get(f'/kalender/{token}.ics').status_code == 404
+    assert client.get(f'/calendar/{token}.ics').status_code == 404
 
 
 def test_escape_and_fold():
@@ -154,10 +154,10 @@ def test_dtstamp_uses_the_app_clock(app, client, login, query, monkeypatch):
     monkeypatch.setattr(slots, 'now', lambda: datetime(2026, 12, 1, 9, 0))
     book(app, 'bob', ('2026-12-01', 'Abend'))
     create_link(client, login)
-    text = client.get(f'/kalender/{calendar_token(query)}.ics').get_data(as_text=True)
+    text = client.get(f'/calendar/{calendar_token(query)}.ics').get_data(as_text=True)
     assert 'DTSTAMP:20261201T080000Z' in text
 
 
 def test_access_log_hides_the_feed_token():
     from laundry.accesslog import redact
-    assert redact('GET /kalender/SECRET-tok_en.ics HTTP/1.1') == 'GET /kalender/*** HTTP/1.1'
+    assert redact('GET /calendar/SECRET-tok_en.ics HTTP/1.1') == 'GET /calendar/*** HTTP/1.1'

@@ -217,7 +217,7 @@ def test_password_reset_mails_are_throttled(app, client, csrf, login, mailbox, m
 
     def ask(minutes):
         monkeypatch.setattr(slots, 'now', lambda: NOW + timedelta(minutes=minutes))
-        client.post('/passwort-vergessen', data={'identifier': 'bob', 'csrf_token': csrf()})
+        client.post('/forgot-password', data={'identifier': 'bob', 'csrf_token': csrf()})
     for minutes in [0, 1, 14]:
         ask(minutes)
     ask(16)
@@ -266,15 +266,15 @@ def test_access_log_hides_tokens():
     from gunicorn.config import Config
 
     from laundry.accesslog import RedactingLogger
-    environ = {'REQUEST_METHOD': 'GET', 'RAW_URI': '/passwort-zuruecksetzen/SECRET.tok-en?x=1',
-               'PATH_INFO': '/passwort-zuruecksetzen/SECRET.tok-en', 'SERVER_PROTOCOL': 'HTTP/1.1',
-               'HTTP_REFERER': 'https://wk.test/abbestellen/SECRET2'}
+    environ = {'REQUEST_METHOD': 'GET', 'RAW_URI': '/reset-password/SECRET.tok-en?x=1',
+               'PATH_INFO': '/reset-password/SECRET.tok-en', 'SERVER_PROTOCOL': 'HTTP/1.1',
+               'HTTP_REFERER': 'https://wk.test/unsubscribe/SECRET2'}
     resp = SimpleNamespace(status='200 OK', sent=10, headers=[])
-    req = SimpleNamespace(headers=[('REFERER', 'https://wk.test/email-bestaetigen/SECRET3'),
-                                   ('X-ORIGINAL-URI', '/kalender/SECRET4.ics')])
+    req = SimpleNamespace(headers=[('REFERER', 'https://wk.test/verify-email/SECRET3'),
+                                   ('X-ORIGINAL-URI', '/calendar/SECRET4.ics')])
     atoms = RedactingLogger(Config()).atoms(resp, req, environ, timedelta(seconds=1))
-    assert atoms['r'] == 'GET /passwort-zuruecksetzen/***?x=1 HTTP/1.1'
-    assert atoms['U'] == '/passwort-zuruecksetzen/***'
-    assert atoms['f'] == 'https://wk.test/abbestellen/***'
-    assert atoms['{raw_uri}e'] == '/passwort-zuruecksetzen/***?x=1'
+    assert atoms['r'] == 'GET /reset-password/***?x=1 HTTP/1.1'
+    assert atoms['U'] == '/reset-password/***'
+    assert atoms['f'] == 'https://wk.test/unsubscribe/***'
+    assert atoms['{raw_uri}e'] == '/reset-password/***?x=1'
     assert 'SECRET' not in str(atoms)

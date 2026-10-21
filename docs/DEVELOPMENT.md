@@ -200,11 +200,11 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
 | `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
 | `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
-| `/passwort-vergessen` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
-| `/passwort-zuruecksetzen/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
-| `/email-bestaetigen/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
-| `/abbestellen/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
-| `/kalender/<token>.ics` | GET | `ical.feed` | token | The token owner's bookings as iCalendar; 404 for unknown tokens |
+| `/forgot-password` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
+| `/reset-password/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
+| `/verify-email/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
+| `/unsubscribe/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
+| `/calendar/<token>.ics` | GET | `ical.feed` | token | The token owner's bookings as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
 
@@ -243,7 +243,7 @@ running booking.
 ## Calendar subscription
 
 `ical.py` serves a user's **own** bookings as an iCalendar feed (RFC 5545) at
-`/kalender/<token>.ics`, so phones can subscribe to it (iOS natively, Android with ICSx⁵, Google
+`/calendar/<token>.ics`, so phones can subscribe to it (iOS natively, Android with ICSx⁵, Google
 Calendar via its web UI). Other households' bookings are never in it.
 
 - Calendar apps can't log in, so the URL carries a secret: `users.calendar_token`
@@ -332,8 +332,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   flashed: Flask sessions are signed but not encrypted, so a flash message would sit readable in
   the cookie. A reload re-submits the form and creates another password.
 - **Access log:** the Dockerfile starts Gunicorn with `--logger-class
-  laundry.accesslog.RedactingLogger`, which replaces the token in `/passwort-zuruecksetzen/`,
-  `/abbestellen/`, `/email-bestaetigen/` and `/kalender/` paths with `***` in every log field. Reverse proxy logs
+  laundry.accesslog.RedactingLogger`, which replaces the token in `/reset-password/`,
+  `/unsubscribe/`, `/verify-email/` and `/calendar/` paths with `***` in every log field. Reverse proxy logs
   are the operator's job (README, *Logs*).
 - **Last admin:** an admin can't delete themselves (view and UI), and there is no way to remove
   admin rights, so at least one admin always remains.

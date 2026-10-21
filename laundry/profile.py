@@ -90,7 +90,7 @@ def index():
     return redirect(url_for('profile.index'))
 
 
-@bp.route('/email-bestaetigen/<token>', methods=['GET', 'POST'])
+@bp.route('/verify-email/<token>', methods=['GET', 'POST'])
 def confirm_email(token):
     """Link in the verification mail. GET only shows a button, so a link scanner at a wrong
     recipient's mail provider can't confirm the address."""
@@ -106,7 +106,7 @@ def confirm_email(token):
     return render_template('confirm_email.html', email=data[1], done=done)
 
 
-@bp.route('/abbestellen/<token>', methods=['GET', 'POST'])
+@bp.route('/unsubscribe/<token>', methods=['GET', 'POST'])
 def unsubscribe(token):
     """Link in every notification mail. GET only shows a button, so link scanners change nothing."""
     data = read_unsubscribe_token(token)

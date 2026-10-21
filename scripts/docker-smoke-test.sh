@@ -49,9 +49,9 @@ docker exec --user 1000:1000 "$NAME" flask --app laundry send-notifications >/de
     || fail "send-notifications via docker exec"
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5101/login)"
 [ "$code" = "200" ] || fail "/login returned $code"
-curl -s -o /dev/null http://127.0.0.1:5101/passwort-zuruecksetzen/smoketoken42
+curl -s -o /dev/null http://127.0.0.1:5101/reset-password/smoketoken42
 sleep 1
-docker logs "$NAME" 2>&1 | grep -q 'GET /passwort-zuruecksetzen/\*\*\*' || fail "no redacted access log line"
+docker logs "$NAME" 2>&1 | grep -q 'GET /reset-password/\*\*\*' || fail "no redacted access log line"
 if docker logs "$NAME" 2>&1 | grep -q smoketoken42; then fail "reset token in the access log"; fi
 docker rm -f "$NAME" >/dev/null
 
