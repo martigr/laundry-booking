@@ -31,7 +31,8 @@ laundry/                  # the application package
 ├── security.py           # security headers (CSP etc.), /.well-known/security.txt
 ├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
-├── profile.py            # bp "profile": display name, mail settings, password; confirm address, unsubscribe
+├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
+├── ical.py               # bp "ical": the user's own bookings as an iCalendar feed (calendar subscription)
 ├── admin.py              # bp "admin": users, settings
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
@@ -54,6 +55,7 @@ tests/
 ├── test_bookings.py      # booking rules, cancel permissions, views, escaping
 ├── test_admin.py         # admin area
 ├── test_cli.py           # CLI commands, first-admin bootstrap
+├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
 └── test_security.py      # headers, input limits, redirects, login throttling, sessions, security.txt, backup
 docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
@@ -118,6 +120,7 @@ email_verified INTEGER 0/1  mails only go out when 1
 reminder_minutes INTEGER 0 = off
 notify_freed  INTEGER 0/1
 session_version INTEGER  +1 on every password change
+calendar_token TEXT UNIQUE  secret of the calendar feed URL, NULL = none
 
 notifications (outbox)
 ──────────────────────
@@ -191,7 +194,7 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
-| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
+| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
@@ -201,6 +204,7 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/passwort-zuruecksetzen/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
 | `/email-bestaetigen/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
 | `/abbestellen/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
+| `/kalender/<token>.ics` | GET | `ical.feed` | token | The token owner's bookings as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
 
@@ -235,6 +239,29 @@ slot within the horizon and the user's upcoming bookings. `group_blocks()` merge
 adjacent slots of the same day and user into one block ("Nachmittag – Abend",
 "Ganzer Tag"), both in the upcoming list (one cancel button per block) and for the
 running booking.
+
+## Calendar subscription
+
+`ical.py` serves a user's **own** bookings as an iCalendar feed (RFC 5545) at
+`/kalender/<token>.ics`, so phones can subscribe to it (iOS natively, Android with ICSx⁵, Google
+Calendar via its web UI). Other households' bookings are never in it.
+
+- Calendar apps can't log in, so the URL carries a secret: `users.calendar_token`
+  (`secrets.token_urlsafe(32)`), created in the profile. "Neuen Link erstellen" replaces it (the
+  old URL answers 404), "Link löschen" sets it to NULL; deleting the user removes it too. It is a
+  random value in the database rather than a signed token, so each user can revoke theirs without
+  touching `SECRET_KEY`. It does not change with the password: the feed only shows bookings, and
+  re-subscribing every device after each password change would be a nuisance.
+- Content: bookings from 4 weeks ago (`KEEP_PAST`) on, adjacent slots merged with
+  `bookings.group_blocks()` into one event. The `UID` is built from the reservation ids, so it
+  changes when a block grows or shrinks; subscribed calendars are replaced as a whole on every
+  refresh, so the old event disappears. Times are converted from the building's `TIMEZONE` to UTC
+  (`…Z`), which avoids a `VTIMEZONE` block. `REFRESH-INTERVAL`/`X-PUBLISHED-TTL` suggest one
+  hour; Apple respects it, Google refreshes when it likes (often only daily).
+- Written by hand (escaping, 75-octet line folding, CRLF) instead of adding a dependency.
+- The profile shows the `https://` link (with a copy button from `static/profile.js`, hidden
+  where `navigator.clipboard` is missing) and a `webcal://` link that opens "subscribe" on iOS.
+  Both are built from `BASE_URL`.
 
 ## Mail notifications
 
@@ -295,6 +322,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   needed. Should you ever put values into inline JS, use `|tojson` in a *single-quoted*
   attribute; `|e` is not safe there. `test_display_name_is_escaped` covers this.
 - **Passwords:** werkzeug hashes (scrypt), length `db.MIN_PASSWORD_LENGTH`..`users.MAX_PASSWORD_LENGTH`.
+- **Calendar feed token:** random, 256 bits, one per user, revocable in the profile; the feed
+  only answers GET and contains nothing but the owner's bookings.
 - **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
   off and need a POST (link scanners only GET). `queue_password_reset()` queues at most one reset
@@ -304,7 +333,7 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   the cookie. A reload re-submits the form and creates another password.
 - **Access log:** the Dockerfile starts Gunicorn with `--logger-class
   laundry.accesslog.RedactingLogger`, which replaces the token in `/passwort-zuruecksetzen/`,
-  `/abbestellen/` and `/email-bestaetigen/` paths with `***` in every log field. Reverse proxy logs
+  `/abbestellen/`, `/email-bestaetigen/` and `/kalender/` paths with `***` in every log field. Reverse proxy logs
   are the operator's job (README, *Logs*).
 - **Last admin:** an admin can't delete themselves (view and UI), and there is no way to remove
   admin rights, so at least one admin always remains.

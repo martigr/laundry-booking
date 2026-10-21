@@ -219,8 +219,9 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     create_app({'TESTING': True, 'DATABASE': str(path)})
     create_app({'TESTING': True, 'DATABASE': str(path)})  # idempotent
     con = sqlite3.connect(path)
-    assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version FROM users'
-                       ).fetchall() == [('bob', None, 0, 0, 0)]
+    assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version, calendar_token '
+                       'FROM users').fetchall() == [('bob', None, 0, 0, 0, None)]
+    assert con.execute("SELECT 1 FROM sqlite_master WHERE name = 'users_calendar_token'").fetchone() == (1,)
     assert con.execute('SELECT COUNT(*) FROM login_failures').fetchone() == (0,)
 
 
