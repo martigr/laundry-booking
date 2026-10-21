@@ -50,6 +50,43 @@
     <input type="hidden" name="action" value="verify_email">
   </form>
 
+  <div class="card">
+    <h2>Kalender abonnieren</h2>
+    <p class="hint" style="margin:0">Deine Buchungen erscheinen automatisch im Kalender deines Handys. Der Kalender holt sie regelmässig ab, neue Buchungen sind also nicht sofort sichtbar.</p>
+    {% if feed_url %}
+    <div class="field">
+      <label for="feed-url">Dein Kalender-Link</label>
+      <div class="copy-row">
+        <input type="text" id="feed-url" value="{{ feed_url }}" readonly>
+        <button type="button" class="btn" id="copy-feed-url" hidden>Kopieren</button>
+      </div>
+      <span class="hint">Wer diesen Link hat, sieht deine Buchungen. Gib ihn nicht weiter.</span>
+    </div>
+    <ul class="calendar-help hint">
+      <li><strong>iPhone:</strong> <a href="{{ webcal_url }}">Hier tippen</a> und „Abonnieren“ wählen. Oder in den Einstellungen unter Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo hinzufügen den Link einfügen.</li>
+      <li><strong>Android:</strong> Die App ICSx⁵ (Play Store oder F&#8209;Droid) installieren, den Link dort hinzufügen und als Intervall 1 Stunde wählen. Google Kalender kann Links nur im Browser abonnieren und aktualisiert sie oft erst nach einem Tag.</li>
+    </ul>
+    <div class="calendar-actions">
+      <form method="post" data-confirm-title="Neuen Link erstellen?" data-confirm="Der bisherige Link funktioniert danach nicht mehr. Du musst den neuen Link auf allen Geräten neu abonnieren." data-confirm-ok="Neuen Link erstellen">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="calendar">
+        <button type="submit" class="btn">Neuen Link erstellen</button>
+      </form>
+      <form method="post" data-confirm-title="Kalender-Link löschen?" data-confirm="Abonnierte Kalender bekommen danach keine Buchungen mehr." data-confirm-ok="Löschen" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="calendar_delete">
+        <button type="submit" class="linklike danger">Link löschen</button>
+      </form>
+    </div>
+    {% else %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="calendar">
+      <button type="submit" class="btn btn-dark">Kalender-Link erstellen</button>
+    </form>
+    {% endif %}
+  </div>
+
   <form class="card" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="password">

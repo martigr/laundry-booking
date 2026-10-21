@@ -36,6 +36,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
   addresses are confirmed by a link first; every mail has a one-click unsubscribe link
+- Calendar subscription: your own bookings as an iCal feed for the phone's calendar
+  (iPhone, Android with ICSx⁵, Google Calendar); the secret link can be renewed or deleted in the profile
 - Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
   sessions end on password change; see [SECURITY.md](SECURITY.md)
 - German UI
@@ -146,7 +148,7 @@ Then set in `.env`:
   it at `0` when nothing sits in front of the app, otherwise clients can fake their address.
   Without it, every request seems to come from the proxy (or Docker's gateway), so the limit of
   20 failed logins per address applies to all residents together.
-- `BASE_URL=https://waschkueche.example.ch` for the links in mails.
+- `BASE_URL=https://waschkueche.example.ch` for the links in mails and the calendar link.
 
 ### Backup and restore
 
@@ -188,8 +190,8 @@ Update at least monthly. To hear about security fixes, watch the repository on G
 `Failed login for 'name' from <address>`, blocked ones as `Login blocked`; after 10 failures for a
 username or 20 from one address within 15 minutes, logins are refused for the rest of that time.
 Logs contain IP addresses and usernames; `docker-compose.yml` therefore keeps at most 3 × 10 MB per
-container. The tokens of mail links (password reset, unsubscribe, confirm address) appear as `***`
-in the app's access log. Your reverse proxy logs them in full if it keeps an access log (nginx does
+container. The tokens of mail links (password reset, unsubscribe, confirm address) and of calendar links appear
+as `***` in the app's access log. Your reverse proxy logs them in full if it keeps an access log (nginx does
 by default, Caddy doesn't): turn it off for these paths or keep those logs short and private.
 
 ### Security checklist
@@ -231,6 +233,24 @@ For local development, [Mailpit](https://mailpit.axllent.org/) catches all mails
 `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`, then `SMTP_HOST=localhost SMTP_PORT=1025
 SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 
+### Calendar subscription
+
+Every resident can create a personal calendar link under *Profil → Kalender abonnieren*
+(`BASE_URL/kalender/<token>.ics`). It contains only their own bookings. Calendar apps fetch it
+themselves, so new bookings show up after the next refresh, not instantly:
+
+- **iPhone/iPad:** tap the `webcal://` link in the profile, or *Settings → Calendar → Accounts →
+  Add Account → Other → Add Subscribed Calendar*. iOS refreshes about hourly.
+- **Android:** the app [ICSx⁵](https://icsx5.bitfire.at/) subscribes on the device and writes into
+  the normal calendar; set the interval to 1 hour.
+- **Google Calendar:** *Other calendars → From URL* in the browser. Google fetches the feed from its
+  own servers, so the app must be reachable from the internet, and it refreshes only every few
+  hours to a day.
+
+The link needs HTTPS with a valid certificate (iOS rejects self-signed ones) and a correct
+`BASE_URL`. Anyone with the link sees that household's bookings; "Neuen Link erstellen"
+in the profile makes the old one stop working.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -244,7 +264,7 @@ SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 | `SECURITY_CONTACT` | – | Contact for security reports in `/.well-known/security.txt`, e.g. `mailto:verwaltung@example.ch` |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
-| `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails |
+| `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails and the calendar link |
 | `SMTP_HOST`, `SMTP_PORT` | –, `587` | Mail server; mail is off while `SMTP_HOST` or `MAIL_FROM` is empty |
 | `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (port 465) or `none` (local test servers only) |
 | `SMTP_USER`, `SMTP_PASSWORD` | – | SMTP login |

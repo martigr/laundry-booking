@@ -270,7 +270,8 @@ def test_access_log_hides_tokens():
                'PATH_INFO': '/passwort-zuruecksetzen/SECRET.tok-en', 'SERVER_PROTOCOL': 'HTTP/1.1',
                'HTTP_REFERER': 'https://wk.test/abbestellen/SECRET2'}
     resp = SimpleNamespace(status='200 OK', sent=10, headers=[])
-    req = SimpleNamespace(headers=[('REFERER', 'https://wk.test/email-bestaetigen/SECRET3')])
+    req = SimpleNamespace(headers=[('REFERER', 'https://wk.test/email-bestaetigen/SECRET3'),
+                                   ('X-ORIGINAL-URI', '/kalender/SECRET4.ics')])
     atoms = RedactingLogger(Config()).atoms(resp, req, environ, timedelta(seconds=1))
     assert atoms['r'] == 'GET /passwort-zuruecksetzen/***?x=1 HTTP/1.1'
     assert atoms['U'] == '/passwort-zuruecksetzen/***'

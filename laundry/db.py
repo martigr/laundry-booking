@@ -71,6 +71,7 @@ ADDED_COLUMNS = [
     ('users', 'notify_freed', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0'),
+    ('users', 'calendar_token', 'TEXT'),  # secret of the calendar feed URL, NULL = no feed
 ]
 
 DEFAULT_SETTINGS = {'horizon_weeks': '4'}
@@ -140,6 +141,8 @@ def init_db():
         if 'email_verified' in added:
             # Addresses from before verification existed keep getting mails
             con.execute("UPDATE users SET email_verified = 1 WHERE email IS NOT NULL AND email != ''")
+        # After ADDED_COLUMNS, since older databases only get the column there
+        con.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_calendar_token ON users (calendar_token)')
 
         cfg = current_app.config
         user_count = con.execute('SELECT COUNT(*) FROM users').fetchone()[0]

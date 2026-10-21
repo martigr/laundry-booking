@@ -1,8 +1,8 @@
-"""Own display name, mail settings and password; links from mails (confirm address, unsubscribe)."""
+"""Own display name, mail settings, calendar link and password; links from mails (confirm address, unsubscribe)."""
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash
 
-from . import mail
+from . import ical, mail
 from .auth import keep_session, login_required
 from .db import get_db
 from .notifications import REMINDER_CHOICES, queue_email_verification, read_unsubscribe_token, read_verify_token
@@ -21,8 +21,11 @@ UNSUBSCRIBE = {
 @login_required
 def index():
     if request.method == 'GET':
+        token = g.user['calendar_token']
         return render_template('profile.html', min_pw=MIN_PASSWORD_LENGTH, max_name=MAX_NAME_LENGTH,
-                               reminder_choices=REMINDER_CHOICES)
+                               reminder_choices=REMINDER_CHOICES,
+                               feed_url=ical.feed_url(token) if token else None,
+                               webcal_url=ical.webcal_url(token) if token else None)
 
     action = request.form.get('action')
     if action == 'name':
@@ -61,6 +64,17 @@ def index():
             with get_db() as con:
                 queue_email_verification(con, g.user)
             flash(f'Bestätigungsmail an {g.user["email"]} verschickt.', 'ok')
+    elif action == 'calendar':
+        # Creates the link, or replaces it: the old URL stops working
+        renewed = bool(g.user['calendar_token'])
+        with get_db() as con:
+            con.execute('UPDATE users SET calendar_token = ? WHERE id = ?', (ical.new_token(), g.user['id']))
+        flash('Neuer Kalender-Link erstellt. Der alte funktioniert nicht mehr; abonniere den neuen.'
+              if renewed else 'Kalender-Link erstellt.', 'ok')
+    elif action == 'calendar_delete':
+        with get_db() as con:
+            con.execute('UPDATE users SET calendar_token = NULL WHERE id = ?', (g.user['id'],))
+        flash('Kalender-Link gelöscht.', 'ok')
     elif action == 'password':
         if not check_password_hash(g.user['password'], request.form.get('old_password', '')):
             flash('Das aktuelle Passwort ist falsch.', 'warn')

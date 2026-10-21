@@ -92,6 +92,10 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .hint { font-size: 13px; color: var(--muted); }
 .field-error { font-size: 13px; font-weight: 600; color: var(--danger); }
 .field-error:empty { display: none; }
+.copy-row { display: flex; gap: 8px; }
+.copy-row input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.calendar-help { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.calendar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-2); min-height: 44px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 

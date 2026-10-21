@@ -1,4 +1,4 @@
-"""Gunicorn access log without the secret tokens of mail links.
+"""Gunicorn access log without the secret tokens of mail links and calendar feeds.
 
 Used by the Dockerfile (`--logger-class laundry.accesslog.RedactingLogger`). Reset links are valid
 for an hour, so whoever reads the log could otherwise take over the account.
@@ -7,8 +7,8 @@ import re
 
 from gunicorn.glogging import Logger
 
-# Path segment after these prefixes is a token (see the routes in auth.py and profile.py)
-TOKEN_PATH = re.compile(r'(/(?:passwort-zuruecksetzen|abbestellen|email-bestaetigen)/)[^/?#\s]+')
+# Path segment after these prefixes is a token (see the routes in auth.py, profile.py and ical.py)
+TOKEN_PATH = re.compile(r'(/(?:passwort-zuruecksetzen|abbestellen|email-bestaetigen|kalender)/)[^/?#\s]+')
 
 
 def redact(text):
