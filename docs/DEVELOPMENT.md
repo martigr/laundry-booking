@@ -67,6 +67,7 @@ requirements.txt          # pinned runtime dependencies (installed by the Docker
 requirements-dev.txt      # + pytest, ruff
 requirements-audit.txt    # pip-audit, only for the audit workflow
 .github/workflows/ci.yml  # ruff, pytest, shellcheck + Docker build and smoke test
+.github/workflows/release.yml  # on tag vX.Y.Z: CI, image to ghcr.io, GitHub release
 .github/workflows/audit.yml  # pip-audit of the pinned dependencies (also weekly)
 .github/dependabot.yml    # weekly update PRs for pip packages and GitHub Actions
 .github/workflows/pages.yml  # deploys site/ + docs/screenshots to GitHub Pages
@@ -402,6 +403,15 @@ Dependabot keeps the SHAs current.
 
 Run the Docker part locally with
 `docker build -t laundry-booking:ci . && scripts/docker-smoke-test.sh`.
+
+**Release** (`.github/workflows/release.yml`) runs on a pushed tag `vX.Y.Z`: it runs the CI workflow
+(`workflow_call`), checks that the tag matches `version` in `pyproject.toml`, builds the image for
+`linux/amd64` and `linux/arm64`, pushes it to `ghcr.io/martigr/laundry-booking` with the tags
+`X.Y.Z`, `X.Y`, `X` and `latest`, and creates the GitHub release with generated notes. To release:
+bump `version` in `pyproject.toml` (semantic versioning: patch for fixes, minor for features, major
+when an update needs manual steps) in a PR, merge it, then on `main`:
+`git tag v1.2.3 && git push origin v1.2.3`. The first push creates the package as private; make it
+public once under *Packages → laundry-booking → Package settings → Change visibility*.
 
 The project page in `site/` is published by `.github/workflows/pages.yml` on every push to `main`
 that touches `site/` or `docs/screenshots/` (or by hand via *Run workflow*). The workflow copies
