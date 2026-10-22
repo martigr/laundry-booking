@@ -198,6 +198,12 @@ td.actions form { display: inline-block; margin: 2px 0 2px 12px; white-space: no
 .household-list .linklike { font-size: 14px; }
 .household-new { display: flex; gap: 8px; align-items: flex-end; }
 .household-new .field { flex: 1; min-width: 0; }
+.segmented.wrap { flex-wrap: wrap; }
+.badge.warn { background: var(--warm-soft); color: var(--warm-ink); }
+.nowrap { white-space: nowrap; }
+.audit-table td { vertical-align: top; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.site-footer { max-width: 1360px; margin: 0 auto; padding: 0 24px 24px; text-align: center; font-size: 12px; color: var(--faint); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 16px; background: var(--subtle); border-radius: 14px; }
 .inline-form .field { flex: 1 1 160px; }
 

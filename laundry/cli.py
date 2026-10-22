@@ -7,7 +7,7 @@ import click
 from flask import current_app
 from flask.cli import with_appcontext
 
-from . import mail, notifications, slots
+from . import audit, mail, notifications, slots
 from .db import get_db
 from .users import UserError, create_user, get_user_by_username
 
@@ -31,6 +31,9 @@ def create_user_command(username, display_name, admin, password):
         create_user(username, password, display_name, admin)
     except UserError as e:
         raise click.ClickException(str(e)) from None
+    with get_db() as con:
+        audit.record(con, 'user_created', username.strip().lower() + (' (Admin)' if admin else ''),
+                     username='Kommandozeile')
     click.echo(f'Benutzer {username} angelegt.')
 
 
@@ -44,6 +47,7 @@ def make_admin_command(username):
         raise click.ClickException(f'Benutzer {username} nicht gefunden.')
     with get_db() as con:
         con.execute('UPDATE users SET is_admin = 1 WHERE id = ?', (user['id'],))
+        audit.record(con, 'user_admin', user['username'], username='Kommandozeile')
     click.echo(f'{username} ist jetzt Admin.')
 
 

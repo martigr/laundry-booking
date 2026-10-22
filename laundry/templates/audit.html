@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Audit-Log – Waschküche{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="kicker">Nur für Admins</div>
+    <h1>Audit-Log</h1>
+  </div>
+  <nav class="segmented wrap" aria-label="Filter">
+    <a href="{{ url_for('admin.audit_log') }}" class="{{ 'active' if not kind }}">Alle</a>
+    {% for key, name in kinds.items() %}
+    <a href="{{ url_for('admin.audit_log', kind=key) }}" class="{{ 'active' if kind == key }}">{{ name }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+<section class="card" aria-labelledby="audit-h">
+  <h2 id="audit-h">{{ total }} {{ 'Eintrag' if total == 1 else 'Einträge' }}</h2>
+  <p class="hint" style="margin:0">Einträge werden {{ audit_days }} Tage aufbewahrt (einstellbar in der <a href="{{ url_for('admin.index') }}">Verwaltung</a>).</p>
+  {% if entries %}
+  <div class="table-wrap">
+    <table class="audit-table" style="min-width:760px">
+      <thead>
+        <tr><th>Zeit</th><th>Wer</th><th>Aktion</th><th>Details</th><th>IP-Adresse</th></tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td class="nowrap">{{ e.at }}</td>
+          <td>{% if e.who %}<strong>{{ e.who }}</strong> <span class="hint">{{ e.username }}</span>{% else %}{{ e.username or '–' }}{% if e.deleted %} <span class="hint">(gelöscht)</span>{% endif %}{% endif %}</td>
+          <td><span class="badge{{ ' warn' if e.failed }}">{{ e.label }}</span></td>
+          <td>{{ e.detail }}</td>
+          <td class="nowrap">{{ e.ip or '–' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="hint">Keine Einträge.</p>
+  {% endif %}
+  {% if pages > 1 %}
+  <nav class="pager" aria-label="Seiten">
+    {% if page > 1 %}<a class="btn btn-small" href="{{ url_for('admin.audit_log', kind=kind or None, page=page - 1) }}">Neuere</a>{% endif %}
+    <span class="hint">Seite {{ page }} von {{ pages }}</span>
+    {% if page < pages %}<a class="btn btn-small" href="{{ url_for('admin.audit_log', kind=kind or None, page=page + 1) }}">Ältere</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

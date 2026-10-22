@@ -14,7 +14,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
     <td width="32%" valign="top"><img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub></td>
     <td valign="top">
       <img src="docs/screenshots/month.png" alt="Month overview"><br><sub>Month overview</sub><br><br>
-      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub>
+      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub><br><br>
+      <img src="docs/screenshots/audit.png" alt="Audit log"><br><sub>Audit log</sub>
     </td>
   </tr>
 </table>
@@ -35,6 +36,9 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
 - Minimal admin area: create/delete users, group them into households, reset passwords, set the booking horizon;
   admins can cancel any booking
+- Audit log for admins: logins and failed login attempts, bookings and cancellations, profile and admin changes,
+  with time and IP address; entries are deleted after a configurable number of days (default 90)
+- The app version is shown at the bottom of every page (when logged in)
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
   addresses are confirmed by a link first; every mail has a one-click unsubscribe link
@@ -212,6 +216,10 @@ Logs contain IP addresses and usernames; `docker-compose.yml` therefore keeps at
 container. The tokens of mail links (password reset, unsubscribe, confirm address) and of calendar links appear
 as `***` in the app's access log. Your reverse proxy logs them in full if it keeps an access log (nginx does
 by default, Caddy doesn't): turn it off for these paths or keep those logs short and private.
+
+The **audit log** (*Verwaltung → Audit-Log*) shows who logged in (or tried to), booked, cancelled or
+changed settings, with the IP address. It lives in the database, not in the container logs; entries
+older than *Audit-Log aufbewahren (Tage)* (admin settings, default 90) are deleted automatically.
 
 ### Security checklist
 

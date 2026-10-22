@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import notifications, slots
+from . import audit, notifications, slots
 from .auth import login_required
 from .db import get_db
 from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bookable_day, parse_day, slot_bounds
@@ -246,6 +246,7 @@ def book():
             with get_db() as con:
                 con.execute('INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?)',
                             (day.isoformat(), slot, g.user['id']))
+                audit.record(con, 'book', label)
             flash(f'Gebucht: {label}', 'ok')
         except sqlite3.IntegrityError:
             flash(f'{label} ist leider schon vergeben.', 'warn')
@@ -276,6 +277,8 @@ def book_day():
             others = [r['slot'] for r in con.execute(
                 'SELECT slot, user_id FROM reservations WHERE day = ?', (day.isoformat(),))
                 if r['slot'] in open_slots and r['user_id'] not in household_ids()]
+            if booked:
+                audit.record(con, 'book', f'{fmt_day(day)} · {slot_list(booked)}')
         taken = [name for name in open_slots if name in others]
         if booked:
             note = f' ({", ".join(taken)} {"war" if len(taken) == 1 else "waren"} schon vergeben)' if taken else ''
@@ -300,15 +303,22 @@ def cancel_reservations(ids):
     if not rows:
         flash('Vergangene Buchungen können nicht storniert werden.', 'warn')
         return
-    with con:
-        con.executemany('DELETE FROM reservations WHERE id = ?', [(r['id'],) for r in rows])
-        notifications.queue_freed_slots(con, [(r['id'], parse_day(r['day']), r['slot']) for r in rows],
-                                        cancelled_by=g.user['id'])
     by_day = {}
     for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
         by_day.setdefault(r['day'], []).append(r['slot'])
-    flash('Storniert: ' + '; '.join(f'{fmt_day(parse_day(d))} · {slot_list(names)}' for d, names in by_day.items()),
-          'ok')
+    summary = '; '.join(f'{fmt_day(parse_day(d))} · {slot_list(names)}' for d, names in by_day.items())
+    owners = sorted({r['user_id'] for r in rows} - {g.user['id']})
+    with con:
+        if owners:  # a housemate's booking, or an admin cancelling someone else's
+            names = [u['display_name'] for u in con.execute(
+                f'SELECT display_name FROM users WHERE id IN ({", ".join("?" * len(owners))})', owners)]
+            audit.record(con, 'cancel', f'{summary} (Buchung von {", ".join(names)})')
+        else:
+            audit.record(con, 'cancel', summary)
+        con.executemany('DELETE FROM reservations WHERE id = ?', [(r['id'],) for r in rows])
+        notifications.queue_freed_slots(con, [(r['id'], parse_day(r['day']), r['slot']) for r in rows],
+                                        cancelled_by=g.user['id'])
+    flash('Storniert: ' + summary, 'ok')
 
 
 @bp.route('/cancel/<int:rid>', methods=['POST'])

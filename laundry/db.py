@@ -68,6 +68,19 @@ SCHEMA = [
     )
     """,
     'CREATE INDEX IF NOT EXISTS login_failures_key ON login_failures (key, at)',
+    # Audit log (audit.record()); user_id has no foreign key, so entries outlive deleted users
+    """
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        user_id INTEGER,
+        username TEXT NOT NULL,
+        action TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        ip TEXT
+    )
+    """,
+    'CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at)',
 ]
 
 # Columns added after the first release: (table, column, definition). Applied by init_db()
@@ -82,7 +95,8 @@ ADDED_COLUMNS = [
     ('users', 'household_id', 'INTEGER REFERENCES households(id) ON DELETE SET NULL'),  # NULL = on their own
 ]
 
-DEFAULT_SETTINGS = {'horizon_weeks': '4'}
+# audit_days: how long audit log entries are kept
+DEFAULT_SETTINGS = {'horizon_weeks': '4', 'audit_days': '90'}
 
 
 def connect():
