@@ -23,7 +23,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 
 ## Features
 
-- Login per household (user with a free display name); "stay signed in" option
+- Login per resident or household (user with a free display name); "stay signed in" option
 - Week view (default) and month overview, usable on phones
 - Daily slots: Vormittag 07–12, Nachmittag 12–17, Abend 17–22
 - One click on a free slot books it, one click on your own booking cancels it
@@ -31,12 +31,12 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Adjacent bookings show up as one block in your upcoming bookings (and cancel together)
 - "Now in the laundry room" card, next free slot and your upcoming bookings
 - Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
-- Minimal admin area: create/delete users, reset passwords, set the booking horizon;
+- Minimal admin area: create/delete users, group them into households, reset passwords, set the booking horizon;
   admins can cancel any booking
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
   addresses are confirmed by a link first; every mail has a one-click unsubscribe link
-- Calendar subscription: your own bookings as an iCal feed for the phone's calendar
+- Calendar subscription: your own bookings, or those of your whole household, as an iCal feed for the phone's calendar
   (iPhone, Android with ICSx⁵, Google Calendar); the secret link can be renewed or deleted in the profile
 - Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
   sessions end on password change; see [SECURITY.md](SECURITY.md)
@@ -253,7 +253,8 @@ SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 ### Calendar subscription
 
 Every resident can create a personal calendar link under *Profil → Kalender abonnieren*
-(`BASE_URL/calendar/<token>.ics`). It contains only their own bookings. Calendar apps fetch it
+(`BASE_URL/calendar/<token>.ics`). It contains their own bookings, or, if an admin has put them
+into a household (*Verwaltung → Haushalte*), the bookings of all its members, each named. Calendar apps fetch it
 themselves, so new bookings show up after the next refresh, not instantly:
 
 - **iPhone/iPad:** tap the `webcal://` link in the profile, or *Settings → Calendar → Accounts →

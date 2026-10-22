@@ -1,7 +1,9 @@
-"""Calendar subscription: the user's own bookings as an iCalendar feed (RFC 5545).
+"""Calendar subscription: the bookings of the user's household as an iCalendar feed (RFC 5545).
 
-Calendar apps can't log in, so the feed URL carries a secret token (`users.calendar_token`).
-The profile creates, renews and deletes it; a renewed token makes the old URL return 404.
+A user in a household (`users.household_id`) gets the bookings of all its members, everyone else
+only their own. Calendar apps can't log in, so the feed URL carries a secret token
+(`users.calendar_token`, one per user). The profile creates, renews and deletes it; a renewed token
+makes the old URL return 404.
 """
 import secrets
 from datetime import UTC, timedelta
@@ -60,14 +62,27 @@ def utc(local, tz):
     return local.replace(tzinfo=tz).astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')
 
 
-def build_feed(user_id):
+def build_feed(user):
     tz = ZoneInfo(current_app.config['TIMEZONE'])
     current = slots.now()
     host = urlsplit(current_app.config['BASE_URL']).hostname or 'localhost'
-    rows = get_db().execute('SELECT id, day, slot FROM reservations WHERE user_id = ? AND day >= ?',
-                            (user_id, (current.date() - KEEP_PAST).isoformat())).fetchall()
-    rows = sorted(({'id': r['id'], 'day': parse_day(r['day']), 'slot': r['slot']} for r in rows),
-                  key=lambda r: (r['day'], SLOT_NAMES.index(r['slot'])))
+    # household_id = NULL matches nothing, so users without a household get only their own
+    rows = get_db().execute("""
+        SELECT r.id, r.day, r.slot, r.user_id, u.display_name
+        FROM reservations r JOIN users u ON u.id = r.user_id
+        WHERE (r.user_id = ? OR u.household_id = ?) AND r.day >= ?
+    """, (user['id'], user['household_id'], (current.date() - KEEP_PAST).isoformat())).fetchall()
+    by_user = {}
+    for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
+        by_user.setdefault(r['user_id'], []).append(
+            {'id': r['id'], 'day': parse_day(r['day']), 'slot': r['slot'], 'who': r['display_name']})
+    blocks = []
+    for own in by_user.values():  # per member, so adjacent slots of two members stay two events
+        for b in group_blocks(own):
+            # In a household feed the name says who booked
+            b['summary'] = f'Waschküche: {b["name"]}' + (f' ({own[0]["who"]})' if user['household_id'] else '')
+            blocks.append(b)
+    blocks.sort(key=lambda b: b['start'])
 
     lines = [
         'BEGIN:VCALENDAR',
@@ -79,7 +94,7 @@ def build_feed(user_id):
         f'REFRESH-INTERVAL;VALUE=DURATION:{REFRESH}',
         f'X-PUBLISHED-TTL:{REFRESH}',
     ]
-    for b in group_blocks(rows):
+    for b in blocks:
         # Adjacent slots are one event; its UID changes when the block does, and calendar apps
         # replace a subscribed calendar as a whole, so the old event simply disappears
         lines += [
@@ -88,7 +103,7 @@ def build_feed(user_id):
             f'DTSTAMP:{utc(current, tz)}',
             f'DTSTART:{utc(b["start"], tz)}',
             f'DTEND:{utc(b["end"], tz)}',
-            f'SUMMARY:{escape("Waschküche: " + b["name"])}',
+            f'SUMMARY:{escape(b["summary"])}',
             f'DESCRIPTION:{escape("Gebucht in der Waschküche-App: " + link("/"))}',
             'TRANSP:OPAQUE',
             'END:VEVENT',
@@ -99,8 +114,8 @@ def build_feed(user_id):
 
 @bp.route('/calendar/<token>.ics')
 def feed(token):
-    row = get_db().execute('SELECT id FROM users WHERE calendar_token = ?', (token,)).fetchone()
-    if row is None:
+    user = get_db().execute('SELECT * FROM users WHERE calendar_token = ?', (token,)).fetchone()
+    if user is None:
         abort(404)
-    return Response(build_feed(row['id']), mimetype='text/calendar',
+    return Response(build_feed(user), mimetype='text/calendar',
                     headers={'Content-Disposition': 'inline; filename="waschkueche.ics"'})

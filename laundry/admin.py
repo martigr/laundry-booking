@@ -1,5 +1,6 @@
-"""Minimal admin area: users and the booking horizon."""
+"""Minimal admin area: users, households and the booking horizon."""
 import secrets
+import sqlite3
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
@@ -13,7 +14,13 @@ bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 def render_index(**extra):
     users = get_db().execute('SELECT * FROM users ORDER BY display_name COLLATE NOCASE').fetchall()
-    return render_template('admin.html', users=users, horizon_weeks=get_setting('horizon_weeks'),
+    households = get_db().execute("""
+        SELECT h.id, h.name, COUNT(u.id) AS members
+        FROM households h LEFT JOIN users u ON u.household_id = h.id
+        GROUP BY h.id ORDER BY h.name
+    """).fetchall()
+    return render_template('admin.html', users=users, households=households,
+                           horizon_weeks=get_setting('horizon_weeks'),
                            min_pw=MIN_PASSWORD_LENGTH, max_name=MAX_NAME_LENGTH, **extra)
 
 
@@ -60,6 +67,53 @@ def delete(uid):
     with get_db() as con:
         con.execute('DELETE FROM users WHERE id = ?', (uid,))  # bookings go via ON DELETE CASCADE
     flash(f'Benutzer „{user["display_name"]}“ gelöscht.', 'ok')
+    return redirect(url_for('admin.index'))
+
+
+@bp.route('/users/<int:uid>/household', methods=['POST'])
+@admin_required
+def set_household(uid):
+    user = get_user(uid) or abort(404)
+    household_id = request.form.get('household_id', '')
+    if household_id:
+        if not household_id.isdigit():
+            abort(400)
+        household = get_db().execute('SELECT * FROM households WHERE id = ?', (int(household_id),)).fetchone()
+        if household is None:
+            abort(400)
+    else:
+        household = None
+    with get_db() as con:
+        con.execute('UPDATE users SET household_id = ? WHERE id = ?', (household and household['id'], uid))
+    flash(f'{user["display_name"]} gehört jetzt zum Haushalt „{household["name"]}“.' if household
+          else f'{user["display_name"]} gehört keinem Haushalt mehr an.', 'ok')
+    return redirect(url_for('admin.index'))
+
+
+@bp.route('/households', methods=['POST'])
+@admin_required
+def create_household():
+    name = request.form.get('name', '').strip()
+    if not 1 <= len(name) <= MAX_NAME_LENGTH:
+        flash(f'Der Name des Haushalts muss 1–{MAX_NAME_LENGTH} Zeichen lang sein.', 'warn')
+        return redirect(url_for('admin.index'))
+    try:
+        with get_db() as con:
+            con.execute('INSERT INTO households (name) VALUES (?)', (name,))
+    except sqlite3.IntegrityError:
+        flash(f'Den Haushalt „{name}“ gibt es schon.', 'warn')
+    else:
+        flash(f'Haushalt „{name}“ angelegt.', 'ok')
+    return redirect(url_for('admin.index'))
+
+
+@bp.route('/households/<int:hid>/delete', methods=['POST'])
+@admin_required
+def delete_household(hid):
+    household = get_db().execute('SELECT * FROM households WHERE id = ?', (hid,)).fetchone() or abort(404)
+    with get_db() as con:
+        con.execute('DELETE FROM households WHERE id = ?', (hid,))  # members: household_id = NULL
+    flash(f'Haushalt „{household["name"]}“ gelöscht. Die Benutzer und ihre Buchungen bleiben.', 'ok')
     return redirect(url_for('admin.index'))
 
 

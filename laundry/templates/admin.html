@@ -19,17 +19,28 @@
   <section class="card split-main" aria-labelledby="users-h">
     <h2 id="users-h">Benutzer</h2>
     <div class="table-wrap">
-      <table style="min-width:700px">
+      <table style="min-width:760px">
         <thead>
-          <tr><th>Anzeigename</th><th>Benutzername</th><th>E-Mail</th><th>Rolle</th><th style="text-align:right">Aktionen</th></tr>
+          <tr><th>Anzeigename</th><th>Benutzername</th><th>E-Mail</th><th>Haushalt</th><th style="text-align:right">Aktionen</th></tr>
         </thead>
         <tbody>
           {% for u in users %}
           <tr>
-            <td><strong>{{ u['display_name'] }}</strong></td>
+            <td><strong>{{ u['display_name'] }}</strong>{% if u['is_admin'] %} <span class="badge admin">Admin</span>{% endif %}</td>
             <td>{{ u['username'] }}</td>
             <td>{% if u['email'] %}{{ u['email'] }}{% if not u['email_verified'] %} <span class="hint">(unbestätigt)</span>{% endif %}{% else %}<span class="hint">–</span>{% endif %}</td>
-            <td>{% if u['is_admin'] %}<span class="badge admin">Admin</span>{% else %}<span class="badge">Bewohner</span>{% endif %}</td>
+            <td>
+              <form class="household-form" method="post" action="{{ url_for('admin.set_household', uid=u['id']) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="household_id" aria-label="Haushalt von {{ u['display_name'] }}">
+                  <option value="">– keiner –</option>
+                  {% for h in households %}
+                  <option value="{{ h['id'] }}"{{ ' selected' if u['household_id'] == h['id'] }}>{{ h['name'] }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-small">Zuordnen</button>
+              </form>
+            </td>
             <td class="actions">
               {% if u['id'] == g.user['id'] %}
               <span class="hint">Du</span>
@@ -73,14 +84,42 @@
     </form>
   </section>
 
-  <form class="card split-side" method="post" action="{{ url_for('admin.settings') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h2>Einstellungen</h2>
-    <div class="field">
-      <label for="horizon_weeks">Buchbar im Voraus (Wochen)</label>
-      <input type="number" id="horizon_weeks" name="horizon_weeks" min="1" max="52" value="{{ horizon_weeks }}" required>
-    </div>
-    <button type="submit" class="btn btn-dark">Speichern</button>
-  </form>
+  <div class="split-side">
+    <section class="card" aria-labelledby="households-h">
+      <h2 id="households-h">Haushalte</h2>
+      <p class="hint" style="margin:0">Benutzer im selben Haushalt sehen im abonnierten Kalender die Buchungen aller Mitglieder.</p>
+      {% if households %}
+      <ul class="household-list">
+        {% for h in households %}
+        <li>
+          <span><strong>{{ h['name'] }}</strong> <span class="hint">{{ h['members'] }} {{ 'Mitglied' if h['members'] == 1 else 'Mitglieder' }}</span></span>
+          <form method="post" action="{{ url_for('admin.delete_household', hid=h['id']) }}" data-confirm-title="Haushalt löschen?" data-confirm="Der Haushalt „{{ h['name'] }}“ wird gelöscht. Die Benutzer und ihre Buchungen bleiben erhalten." data-confirm-ok="Löschen" data-confirm-danger>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="linklike danger">Löschen</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <form class="household-new" method="post" action="{{ url_for('admin.create_household') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="household_name">Neuer Haushalt</label>
+          <input type="text" id="household_name" name="name" placeholder="z. B. Müller 2. OG" maxlength="{{ max_name }}" required>
+        </div>
+        <button type="submit" class="btn btn-dark">Anlegen</button>
+      </form>
+    </section>
+
+    <form class="card" method="post" action="{{ url_for('admin.settings') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h2>Einstellungen</h2>
+      <div class="field">
+        <label for="horizon_weeks">Buchbar im Voraus (Wochen)</label>
+        <input type="number" id="horizon_weeks" name="horizon_weeks" min="1" max="52" value="{{ horizon_weeks }}" required>
+      </div>
+      <button type="submit" class="btn btn-dark">Speichern</button>
+    </form>
+  </div>
 </div>
 {% endblock %}
