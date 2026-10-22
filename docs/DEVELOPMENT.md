@@ -199,8 +199,8 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/month` | GET | `bookings.month` | user | Month overview; `?month=YYYY-MM` |
 | `/book` | POST | `bookings.book` | user | `day`, `slot`, `next` |
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
-| `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
-| `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
+| `/cancel/<id>` | POST | `bookings.cancel` | owner, housemate or admin | Only before the slot has ended |
+| `/cancel` | POST | `bookings.cancel_many` | owner, housemate or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
 | `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users, households and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
@@ -227,9 +227,16 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
 - Booking is allowed up to `today + horizon_weeks` (`slots.last_bookable_day()`).
 - **Whole day:** `book_day()` inserts each slot of the day that hasn't ended with
   `ON CONFLICT (day, slot) DO NOTHING` in one transaction. Slots someone else already has
-  stay theirs; the flash message names them. No quota, like single slots.
-- Users cancel their own bookings; admins can cancel any. `cancel_reservations()` is shared by
-  `/cancel/<id>` and `/cancel`: 404 if any id is missing, 403 if any booking isn't yours.
+  stay theirs; the flash message names them (slots of housemates don't count as taken). No quota,
+  like single slots.
+- Users cancel their own bookings and those of their housemates; admins can cancel any.
+  `cancel_reservations()` is shared by `/cancel/<id>` and `/cancel`: 404 if any id is missing, 403 if
+  any booking isn't your household's.
+- **Households:** `bookings.household_ids()` returns the current user's id plus those of everyone with
+  the same `household_id` (cached on `g`). A booking by any of them counts as the user's own:
+  `build_cell()` sets `ours` (state `mine`, blue, cancelable, no "Fremde Buchung" dialog) next to
+  `mine` (booked by the user personally, labelled "Du"). Bookings still belong to the person who made
+  them, so reminders go to them and the cell shows their name.
 - "Now" always comes from `slots.now()`, which uses the `TIMEZONE` config. Call it as
   `slots.now()` (module attribute), never `from .slots import now`, and never
   `datetime.now()`: the tests replace `slots.now` with a fixed time.
@@ -245,8 +252,8 @@ logic. `build_days()` also sets `book_day`, the label of the day's whole-day but
 slots are bookable.
 
 `bookings.sidebar_info()` computes the "Jetzt in der Waschküche" card, the next free
-slot within the horizon and the user's upcoming bookings. `group_blocks()` merges
-adjacent slots of the same day and user into one block ("Nachmittag – Abend",
+slot within the horizon and the upcoming bookings of the user's household (housemates' with their
+name). `group_blocks()` merges adjacent slots of the same day and user into one block ("Nachmittag – Abend",
 "Ganzer Tag"), both in the upcoming list (one cancel button per block) and for the
 running booking.
 
@@ -258,7 +265,7 @@ Calendar via its web UI). Other households' bookings are never in it.
 
 - Households: an admin creates them and assigns users (`users.household_id`) in the admin area,
   so several accounts (e.g. a couple, each with their own login) see each other's bookings in their
-  subscribed calendar. A user without a household gets only their own bookings. Bookings still
+  subscribed calendar and can cancel them in the app (see *Booking rules*). A user without a household gets only their own bookings. Bookings still
   belong to the user; deleting a household only clears `household_id`. In a household feed the
   `SUMMARY` names who booked ("Waschküche: Abend (Bob)"), and blocks are merged per member only.
   Only admins assign households, so nobody can add themselves to another household's feed.
@@ -367,7 +374,7 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 
 ## Frontend
 
-- Design tokens are CSS variables in `:root` of `style.css`. Blue = your booking,
+- Design tokens are CSS variables in `:root` of `style.css`. Blue = yours or your household's,
   grey = someone else's, dashed = free, orange = today and the running slot.
 - Layout: flexbox/grid. The week grid has 7 columns on desktop and switches at
   `max-width: 860px` to one row per day with the three slots next to each other.

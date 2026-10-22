@@ -13,6 +13,14 @@ from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bo
 bp = Blueprint('bookings', __name__)
 
 
+def household_ids():
+    """Ids of the current user and their housemates: their bookings count as the user's own."""
+    if 'household_ids' not in g:
+        g.household_ids = {r['id'] for r in get_db().execute(
+            'SELECT id FROM users WHERE id = ? OR household_id = ?', (g.user['id'], g.user['household_id']))}
+    return g.household_ids
+
+
 def load_reservations(start, end):
     rows = get_db().execute("""
         SELECT r.id, r.day, r.slot, r.user_id, u.display_name
@@ -27,8 +35,9 @@ def build_cell(day, slot_name, res, current, last_day):
     start, end = slot_bounds(day, slot_name)
     past = end <= current
     mine = bool(res) and res['user_id'] == g.user['id']
+    ours = bool(res) and res['user_id'] in household_ids()  # booked by me or a housemate
     if res:
-        state = 'mine' if mine else 'taken'
+        state = 'mine' if ours else 'taken'
     elif past:
         state = 'past'
     elif day > last_day:
@@ -45,9 +54,10 @@ def build_cell(day, slot_name, res, current, last_day):
         'running': start <= current < end,
         'res': res,
         'mine': mine,
+        'ours': ours,
         'state': state,
         'bookable': state == 'free',
-        'cancelable': bool(res) and not past and (mine or bool(g.user['is_admin'])),
+        'cancelable': bool(res) and not past and (ours or bool(g.user['is_admin'])),
     }
 
 
@@ -131,16 +141,24 @@ def sidebar_info(current):
                 break
         d += timedelta(days=1)
 
-    rows = get_db().execute(
-        'SELECT id, day, slot FROM reservations WHERE user_id = ? AND day >= ?',
-        (g.user['id'], today.isoformat())).fetchall()
-    upcoming = []
-    for r in rows:
+    ids = sorted(household_ids())
+    rows = get_db().execute(f"""
+        SELECT r.id, r.day, r.slot, r.user_id, u.display_name
+        FROM reservations r JOIN users u ON u.id = r.user_id
+        WHERE r.user_id IN ({", ".join("?" * len(ids))}) AND r.day >= ?
+    """, (*ids, today.isoformat())).fetchall()
+    by_user = {}
+    for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
         day = parse_day(r['day'])
         if slot_bounds(day, r['slot'])[1] > current:
-            upcoming.append({'id': r['id'], 'day': day, 'slot': r['slot']})
-    upcoming.sort(key=lambda u: (u['day'], SLOT_NAMES.index(u['slot'])))
-    upcoming = group_blocks(upcoming)
+            by_user.setdefault(r['user_id'], []).append(
+                {'id': r['id'], 'day': day, 'slot': r['slot'], 'who': r['display_name']})
+    upcoming = []
+    for uid, own in by_user.items():  # per member, so a housemate's adjacent slot stays a separate block
+        for b in group_blocks(own):
+            b['who'] = None if uid == g.user['id'] else own[0]['who']
+            upcoming.append(b)
+    upcoming.sort(key=lambda b: b['start'])
     for b in upcoming:
         b.update(wd=WEEKDAYS[b['day'].weekday()], label='heute' if b['day'] == today else fmt_day(b['day']))
 
@@ -254,9 +272,10 @@ def book_day():
             booked = [name for name in open_slots if con.execute(
                 'INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?) ON CONFLICT (day, slot) DO NOTHING',
                 (day.isoformat(), name, g.user['id'])).rowcount]
+            # Slots of housemates count as already booked by us, not as taken
             others = [r['slot'] for r in con.execute(
-                'SELECT slot FROM reservations WHERE day = ? AND user_id != ?', (day.isoformat(), g.user['id']))
-                if r['slot'] in open_slots]
+                'SELECT slot, user_id FROM reservations WHERE day = ?', (day.isoformat(),))
+                if r['slot'] in open_slots and r['user_id'] not in household_ids()]
         taken = [name for name in open_slots if name in others]
         if booked:
             note = f' ({", ".join(taken)} {"war" if len(taken) == 1 else "waren"} schon vergeben)' if taken else ''
@@ -264,17 +283,17 @@ def book_day():
         elif taken:
             flash(f'Am {fmt_day(day)} ist nichts mehr frei.', 'warn')
         else:
-            flash(f'{fmt_day(day)} ist schon für dich gebucht.', 'ok')
+            flash(f'{fmt_day(day)} ist schon für {"euch" if len(household_ids()) > 1 else "dich"} gebucht.', 'ok')
     return back_to_calendar()
 
 
 def cancel_reservations(ids):
-    """Cancel the given reservations: 404 if one is missing, 403 if one isn't yours (unless admin)."""
+    """Cancel the given reservations: 404 if one is missing, 403 if one isn't your household's (unless admin)."""
     con = get_db()
     rows = con.execute(f'SELECT * FROM reservations WHERE id IN ({", ".join("?" * len(ids))})', ids).fetchall()
     if len(rows) != len(ids):
         abort(404)
-    if not g.user['is_admin'] and any(r['user_id'] != g.user['id'] for r in rows):
+    if not g.user['is_admin'] and any(r['user_id'] not in household_ids() for r in rows):
         abort(403)
     current = slots.now()
     rows = [r for r in rows if slot_bounds(parse_day(r['day']), r['slot'])[1] > current]

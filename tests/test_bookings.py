@@ -201,3 +201,88 @@ def test_cancel_block_skips_past_slots(client, query, reservations, login):
     assert reservations() == [('2026-10-15', 'Vormittag', 'bob')]
     client.post('/cancel', data={'id': ids[:1], 'csrf_token': t})
     assert reservations() == [('2026-10-15', 'Vormittag', 'bob')]
+
+
+def household(app, *usernames):
+    """Put the users into one new household."""
+    from laundry.db import get_db
+    from laundry.users import create_user
+    with app.app_context():
+        for name in usernames:
+            if not get_db().execute('SELECT 1 FROM users WHERE username = ?', (name,)).fetchone():
+                create_user(name, 'secret1234', name.capitalize())
+        with get_db() as con:
+            hid = con.execute("INSERT INTO households (name) VALUES ('WG')").lastrowid
+            con.executemany('UPDATE users SET household_id = ? WHERE username = ?', [(hid, n) for n in usernames])
+
+
+def test_housemates_cancel_each_others_bookings(app, client, query, reservations, login):
+    household(app, 'bob', 'carol')
+    t = login('carol')
+    book(client, t, '2026-10-17', 'Abend')
+    book(client, t, '2026-10-18', 'Abend')
+    first, second = [r[0] for r in query('SELECT id FROM reservations ORDER BY id')]
+
+    t = login('bob')
+    resp = client.post(f'/cancel/{first}', data={'csrf_token': t}, follow_redirects=True)
+    assert 'Storniert: Sa 17. Okt. · Abend' in resp.get_data(as_text=True)
+    client.post('/cancel', data={'id': [second], 'csrf_token': t})
+    assert reservations() == []
+
+
+def test_household_does_not_extend_to_others(app, client, query, reservations, login):
+    household(app, 'bob', 'carol')
+    t = login('bob')
+    book(client, t, '2026-10-17', 'Abend')
+    bobs = query('SELECT id FROM reservations')[0][0]
+    with app.app_context():
+        from laundry.users import create_user
+        create_user('dave', 'secret1234', 'Dave')
+    t = login('dave')
+    assert client.post(f'/cancel/{bobs}', data={'csrf_token': t}).status_code == 403
+
+    # A block with one booking from outside the household is refused as a whole
+    t = login('alice')
+    book(client, t, '2026-10-18', 'Abend')
+    alices = query("SELECT id FROM reservations WHERE day = '2026-10-18'")[0][0]
+    t = login('carol')
+    assert client.post('/cancel', data={'id': [bobs, alices], 'csrf_token': t}).status_code == 403
+    assert len(reservations()) == 2
+
+
+def test_housemate_bookings_look_like_own(app, client, login):
+    household(app, 'bob', 'carol')
+    t = login('carol')
+    book(client, t, '2026-10-17', 'Abend')
+    book(client, t, '2026-10-17', 'Nachmittag')
+    login('bob')
+    page = client.get('/?week=2026-10-17').get_data(as_text=True)
+    assert 'class="slot mine cancelable"' in page
+    assert 'Carol' in page and 'data-confirm' not in page  # no "Fremde Buchung" dialog
+    assert 'Euer Haushalt' in page
+    # Upcoming bookings of the household, with who booked them
+    assert 'Eure nächsten Buchungen' in page
+    assert 'Sa 17. Okt. · Carol</strong><span>Nachmittag – Abend · 12:00 – 22:00</span>' in page
+    assert 'Euer Haushalt' in client.get('/month?month=2026-10').get_data(as_text=True)
+
+
+def test_without_household_nothing_changes(client, login):
+    t = login('bob')
+    book(client, t, '2026-10-17', 'Abend')
+    page = client.get('/?week=2026-10-17').get_data(as_text=True)
+    assert 'Deine Buchung' in page and 'Deine nächsten Buchungen' in page
+    assert 'Sa 17. Okt.</strong>' in page  # no name on own bookings
+
+
+def test_book_whole_day_counts_housemate_slots_as_ours(app, client, reservations, login):
+    household(app, 'bob', 'carol')
+    t = login('carol')
+    book(client, t, '2026-10-17', 'Abend')
+    t = login('bob')
+    book_day(client, t, '2026-10-17')
+    text = client.get('/?week=2026-10-17').get_data(as_text=True)
+    assert 'Gebucht: Sa 17. Okt. · Vormittag, Nachmittag' in text
+    assert 'schon vergeben' not in text
+    book_day(client, t, '2026-10-17')
+    assert 'ist schon für euch gebucht' in client.get('/').get_data(as_text=True)
+    assert len(reservations()) == 3
