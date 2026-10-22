@@ -36,7 +36,7 @@ as_root() {  # run a command in a throwaway container as root with BIND_DIR at /
     docker run --rm --user 0:0 --entrypoint sh -v "$BIND_DIR":/x "$IMAGE" -c "$1"
 }
 
-echo "1) Named volume: starts, healthy, runs as uid 1000, CLI and notifier work, no tokens in the access log"
+echo "1) Named volume: starts, healthy, runs as uid 1000, CLI and notifier work, no tokens in the access log, no errors"
 NAME=smoke-named
 docker run -d --name "$NAME" -p 5101:5000 -v smoke-data:/data \
     -e SECRET_KEY=ci -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=secret1234 "$IMAGE" >/dev/null
@@ -53,6 +53,7 @@ curl -s -o /dev/null http://127.0.0.1:5101/reset-password/smoketoken42
 sleep 1
 docker logs "$NAME" 2>&1 | grep -q 'GET /reset-password/\*\*\*' || fail "no redacted access log line"
 if docker logs "$NAME" 2>&1 | grep -q smoketoken42; then fail "reset token in the access log"; fi
+if docker logs "$NAME" 2>&1 | grep -q '\[ERROR\]'; then fail "error in the log"; fi
 docker rm -f "$NAME" >/dev/null
 
 echo "2) Host folder owned by root, PUID/PGID set: ownership is fixed"

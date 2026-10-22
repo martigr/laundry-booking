@@ -24,5 +24,8 @@ HEALTHCHECK --interval=30s --timeout=3s \
 ENTRYPOINT ["docker-entrypoint.sh"]
 # SQLite allows one writer at a time, so a few workers are plenty.
 # The logger class keeps the tokens of mail links out of the access log.
+# No control socket (gunicornc is not used): by default Gunicorn creates it in $HOME, which
+# is still /root after the entrypoint drops privileges, so it would log "Permission denied".
 CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:5000", "--access-logfile", "-", \
-     "--logger-class", "laundry.accesslog.RedactingLogger", "laundry:create_app()"]
+     "--logger-class", "laundry.accesslog.RedactingLogger", "--no-control-socket", \
+     "laundry:create_app()"]
