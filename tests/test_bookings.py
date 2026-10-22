@@ -262,7 +262,7 @@ def test_housemate_bookings_look_like_own(app, client, login):
     assert 'Euer Haushalt' in page
     # Upcoming bookings of the household, with who booked them
     assert 'Eure nächsten Buchungen' in page
-    assert 'Nachmittag – Abend · 12:00 – 22:00 · Carol' in page
+    assert 'Sa 17. Okt. · Carol</strong><span>Nachmittag – Abend · 12:00 – 22:00</span>' in page
     assert 'Euer Haushalt' in client.get('/month?month=2026-10').get_data(as_text=True)
 
 
@@ -271,7 +271,7 @@ def test_without_household_nothing_changes(client, login):
     book(client, t, '2026-10-17', 'Abend')
     page = client.get('/?week=2026-10-17').get_data(as_text=True)
     assert 'Deine Buchung' in page and 'Deine nächsten Buchungen' in page
-    assert 'Abend · 17:00 – 22:00 ·' not in page  # no name on own bookings
+    assert 'Sa 17. Okt.</strong>' in page  # no name on own bookings
 
 
 def test_book_whole_day_counts_housemate_slots_as_ours(app, client, reservations, login):

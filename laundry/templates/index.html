@@ -77,7 +77,7 @@
         {% for u in upcoming %}
         <li>
           <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
-          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.name }} · {{ u.time }}{% if u.who %} · {{ u.who }}{% endif %}</span></div>
+          <div class="what"><strong>{{ u.label }}{% if u.who %} · {{ u.who }}{% endif %}</strong><span>{{ u.name }} · {{ u.time }}</span></div>
           <form method="post" action="{{ url_for('bookings.cancel_many') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% for id in u.ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
