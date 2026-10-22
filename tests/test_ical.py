@@ -2,6 +2,7 @@ from datetime import datetime
 
 from laundry import ical, slots
 from laundry.db import get_db
+from laundry.users import create_user
 
 
 def book(app, username, *day_slots):
@@ -161,3 +162,60 @@ def test_dtstamp_uses_the_app_clock(app, client, login, query, monkeypatch):
 def test_access_log_hides_the_feed_token():
     from laundry.accesslog import redact
     assert redact('GET /calendar/SECRET-tok_en.ics HTTP/1.1') == 'GET /calendar/*** HTTP/1.1'
+
+
+def make_household(client, login, query, name, *usernames):
+    admin = login('alice')
+    client.post('/admin/households', data={'name': name, 'csrf_token': admin})
+    hid = query('SELECT id FROM households WHERE name = ?', name)[0][0]
+    for username in usernames:
+        uid = query('SELECT id FROM users WHERE username = ?', username)[0][0]
+        client.post(f'/admin/users/{uid}/household', data={'household_id': str(hid), 'csrf_token': admin})
+    return hid
+
+
+def test_household_feed_contains_the_bookings_of_all_members(app, client, login, query):
+    with app.app_context():
+        create_user('carol', 'secret1234', 'Carol')
+    make_household(client, login, query, 'Müller 2. OG', 'bob', 'carol')
+    # Adjacent slots of two members stay two events
+    book(app, 'bob', ('2026-10-16', 'Vormittag'))
+    book(app, 'carol', ('2026-10-16', 'Nachmittag'), ('2026-10-17', 'Abend'))
+    book(app, 'alice', ('2026-10-16', 'Abend'))
+    create_link(client, login, 'carol')
+    text = client.get(f'/calendar/{calendar_token(query, "carol")}.ics').get_data(as_text=True)
+    summaries = [line for line in unfold(text).split('\r\n') if line.startswith('SUMMARY')]
+    assert summaries == ['SUMMARY:Waschküche: Vormittag (Bob)', 'SUMMARY:Waschküche: Nachmittag (Carol)',
+                         'SUMMARY:Waschküche: Abend (Carol)']
+    assert 'Alice' not in text
+
+    page = client.get('/profile').get_data(as_text=True)
+    assert 'Die Buchungen deines Haushalts „Müller 2. OG“' in page
+    assert 'deine und die von Bob' in page
+
+
+def test_feed_without_household_has_no_names(app, client, login, query):
+    make_household(client, login, query, 'Leer')  # a household bob isn't in changes nothing
+    book(app, 'bob', ('2026-10-16', 'Vormittag'))
+    create_link(client, login)
+    text = client.get(f'/calendar/{calendar_token(query)}.ics').get_data(as_text=True)
+    assert 'SUMMARY:Waschküche: Vormittag\r\n' in unfold(text)
+    assert 'Deine Buchungen erscheinen' in client.get('/profile').get_data(as_text=True)
+
+
+def test_leaving_or_deleting_the_household_ends_sharing(app, client, login, query):
+    hid = make_household(client, login, query, 'WG', 'alice', 'bob')
+    book(app, 'alice', ('2026-10-16', 'Abend'))
+    create_link(client, login)
+    url = f'/calendar/{calendar_token(query)}.ics'
+    assert len(events(client.get(url).get_data(as_text=True))) == 1
+
+    admin = login('alice')
+    client.post('/admin/users/2/household', data={'household_id': '', 'csrf_token': admin})
+    assert events(client.get(url).get_data(as_text=True)) == []
+
+    client.post('/admin/users/2/household', data={'household_id': str(hid), 'csrf_token': admin})
+    assert len(events(client.get(url).get_data(as_text=True))) == 1
+    client.post(f'/admin/households/{hid}/delete', data={'csrf_token': admin})
+    assert query('SELECT household_id FROM users') == [(None,), (None,)]
+    assert events(client.get(url).get_data(as_text=True)) == []

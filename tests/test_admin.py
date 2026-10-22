@@ -57,3 +57,45 @@ def test_horizon_setting(client, reservations, login):
     client.post('/book', data={'day': '2026-10-30', 'slot': 'Abend', 'csrf_token': t})
     client.post('/book', data={'day': '2026-10-22', 'slot': 'Abend', 'csrf_token': t})
     assert reservations() == [('2026-10-22', 'Abend', 'alice')]
+
+
+def test_households(client, query, login):
+    t = login('alice')
+    client.post('/admin/households', data={'name': ' Müller 2. OG ', 'csrf_token': t})
+    resp = client.post('/admin/households', data={'name': 'müller 2. og', 'csrf_token': t}, follow_redirects=True)
+    assert 'gibt es schon' in resp.get_data(as_text=True)
+    client.post('/admin/households', data={'name': '', 'csrf_token': t})
+    client.post('/admin/households', data={'name': 'x' * 41, 'csrf_token': t})
+    assert query('SELECT name FROM households') == [('Müller 2. OG',)]
+    hid = query('SELECT id FROM households')[0][0]
+
+    resp = client.post('/admin/users/2/household', data={'household_id': str(hid), 'csrf_token': t},
+                       follow_redirects=True)
+    assert 'Bob gehört jetzt zum Haushalt „Müller 2. OG“.' in resp.get_data(as_text=True)
+    assert query("SELECT household_id FROM users WHERE username = 'bob'") == [(hid,)]
+    page = client.get('/admin').get_data(as_text=True)
+    assert f'<option value="{hid}" selected>Müller 2. OG</option>' in page
+    assert '1 Mitglied' in page
+    assert 'data-confirm-title="Haushalt löschen?"' in page
+    assert 'name="display_name" placeholder="z. B. Anna Müller"' in page  # a person, not a household
+
+    client.post('/admin/users/2/household', data={'household_id': '', 'csrf_token': t})
+    assert query("SELECT household_id FROM users WHERE username = 'bob'") == [(None,)]
+
+
+def test_household_errors(client, query, login):
+    t = login('alice')
+    client.post('/admin/households', data={'name': 'WG', 'csrf_token': t})
+    hid = query('SELECT id FROM households')[0][0]
+    assert client.post('/admin/users/2/household', data={'household_id': '999', 'csrf_token': t}).status_code == 400
+    assert client.post('/admin/users/2/household', data={'household_id': 'x', 'csrf_token': t}).status_code == 400
+    assert client.post('/admin/users/99/household', data={'household_id': str(hid), 'csrf_token': t}).status_code == 404
+    assert client.post('/admin/households/999/delete', data={'csrf_token': t}).status_code == 404
+    assert client.post('/admin/users/2/household', data={'household_id': str(hid)}).status_code == 400  # CSRF
+
+    t = login('bob')
+    assert client.post('/admin/households', data={'name': 'Meins', 'csrf_token': t}).status_code == 403
+    assert client.post('/admin/users/2/household', data={'household_id': str(hid), 'csrf_token': t}).status_code == 403
+    assert client.post(f'/admin/households/{hid}/delete', data={'csrf_token': t}).status_code == 403
+    assert query('SELECT id, name FROM households') == [(hid, 'WG')]
+    assert query('SELECT household_id FROM users') == [(None,), (None,)]

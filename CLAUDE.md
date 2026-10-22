@@ -27,7 +27,8 @@ flask --app laundry --debug run              # dev server on :5000
 
 - UI text is **German** (Swiss style: "ss" instead of "ß"). Code, comments, docs and commits are English.
 - No quotas, by design: whoever books first gets the slot. Don't add limits unless asked.
-- One account per household: bookings belong to `users.id`; `display_name` is what others see.
+- Bookings belong to `users.id`; `display_name` is what others see. Several accounts can share a household
+  (`households`, `users.household_id`, set by admins); for now it only joins their calendar feeds.
 - Get the current time only via `slots.now()` (module attribute; tests replace it), never `datetime.now()`.
 - DB access through `get_db()` (one connection per request); writes inside `with get_db() as con:`.
 - Create users only through `users.create_user()` (validation, lowercase usernames).

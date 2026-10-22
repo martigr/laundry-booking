@@ -52,7 +52,11 @@
 
   <div class="card">
     <h2>Kalender abonnieren</h2>
-    <p class="hint" style="margin:0">Deine Buchungen erscheinen automatisch im Kalender deines Handys. Der Kalender holt sie regelmässig ab, neue Buchungen sind also nicht sofort sichtbar.</p>
+    {% if household %}
+    <p class="hint" style="margin:0">Die Buchungen deines Haushalts „{{ household }}“ erscheinen automatisch im Kalender deines Handys{% if housemates %}: deine und die von {{ housemates|join(', ') }}{% endif %}. Der Kalender holt sie regelmässig ab, neue Buchungen sind also nicht sofort sichtbar.</p>
+    {% else %}
+    <p class="hint" style="margin:0">Deine Buchungen erscheinen automatisch im Kalender deines Handys. Der Kalender holt sie regelmässig ab, neue Buchungen sind also nicht sofort sichtbar. Wohnen mehrere Benutzer im selben Haushalt, kann ein Admin sie zusammenfassen; dann enthält der Kalender die Buchungen aller.</p>
+    {% endif %}
     {% if feed_url %}
     <div class="field">
       <label for="feed-url">Dein Kalender-Link</label>
@@ -60,7 +64,7 @@
         <input type="text" id="feed-url" value="{{ feed_url }}" readonly>
         <button type="button" class="btn" id="copy-feed-url" hidden>Kopieren</button>
       </div>
-      <span class="hint">Wer diesen Link hat, sieht deine Buchungen. Gib ihn nicht weiter.</span>
+      <span class="hint">Wer diesen Link hat, sieht {{ 'die Buchungen deines Haushalts' if household else 'deine Buchungen' }}. Gib ihn nicht weiter.</span>
     </div>
     <ul class="calendar-help hint">
       <li><strong>iPhone:</strong> <a href="{{ webcal_url }}">Hier tippen</a> und „Abonnieren“ wählen. Oder in den Einstellungen unter Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo hinzufügen den Link einfügen.</li>

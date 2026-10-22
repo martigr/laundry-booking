@@ -32,8 +32,8 @@ laundry/                  # the application package
 ├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
-├── ical.py               # bp "ical": the user's own bookings as an iCalendar feed (calendar subscription)
-├── admin.py              # bp "admin": users, settings
+├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
+├── admin.py              # bp "admin": users, households, settings
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
@@ -122,6 +122,12 @@ reminder_minutes INTEGER 0 = off
 notify_freed  INTEGER 0/1
 session_version INTEGER  +1 on every password change
 calendar_token TEXT UNIQUE  secret of the calendar feed URL, NULL = none
+household_id  INTEGER → households.id ON DELETE SET NULL, NULL = none
+
+households
+──────────
+id    INTEGER PK
+name  TEXT UNIQUE (case-insensitive)
 
 notifications (outbox)
 ──────────────────────
@@ -196,16 +202,19 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/cancel/<id>` | POST | `bookings.cancel` | owner or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
 | `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
-| `/admin` | GET | `admin.index` | admin | Users and settings |
+| `/admin` | GET | `admin.index` | admin | Users, households and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
 | `/admin/users/<id>/delete` | POST | `admin.delete` | admin | Not yourself; bookings are deleted too |
+| `/admin/users/<id>/household` | POST | `admin.set_household` | admin | `household_id` (empty = none); 400 for an unknown household |
+| `/admin/households` | POST | `admin.create_household` | admin | `name` (1–40 characters, unique ignoring case) |
+| `/admin/households/<id>/delete` | POST | `admin.delete_household` | admin | Members stay, their `household_id` becomes NULL |
 | `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
 | `/forgot-password` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
 | `/reset-password/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
 | `/verify-email/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
 | `/unsubscribe/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
-| `/calendar/<token>.ics` | GET | `ical.feed` | token | The token owner's bookings as iCalendar; 404 for unknown tokens |
+| `/calendar/<token>.ics` | GET | `ical.feed` | token | The bookings of the token owner's household (or their own) as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
 
@@ -243,12 +252,20 @@ running booking.
 
 ## Calendar subscription
 
-`ical.py` serves a user's **own** bookings as an iCalendar feed (RFC 5545) at
+`ical.py` serves the bookings of a user's **household** as an iCalendar feed (RFC 5545) at
 `/calendar/<token>.ics`, so phones can subscribe to it (iOS natively, Android with ICSx⁵, Google
 Calendar via its web UI). Other households' bookings are never in it.
 
+- Households: an admin creates them and assigns users (`users.household_id`) in the admin area,
+  so several accounts (e.g. a couple, each with their own login) see each other's bookings in their
+  subscribed calendar. A user without a household gets only their own bookings. Bookings still
+  belong to the user; deleting a household only clears `household_id`. In a household feed the
+  `SUMMARY` names who booked ("Waschküche: Abend (Bob)"), and blocks are merged per member only.
+  Only admins assign households, so nobody can add themselves to another household's feed.
+
 - Calendar apps can't log in, so the URL carries a secret: `users.calendar_token`
-  (`secrets.token_urlsafe(32)`), created in the profile. "Neuen Link erstellen" replaces it (the
+  (`secrets.token_urlsafe(32)`), created in the profile. Each member has their own link.
+ "Neuen Link erstellen" replaces it (the
   old URL answers 404), "Link löschen" sets it to NULL; deleting the user removes it too. It is a
   random value in the database rather than a signed token, so each user can revoke theirs without
   touching `SECRET_KEY`. It does not change with the password: the feed only shows bookings, and
@@ -324,7 +341,7 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   attribute; `|e` is not safe there. `test_display_name_is_escaped` covers this.
 - **Passwords:** werkzeug hashes (scrypt), length `db.MIN_PASSWORD_LENGTH`..`users.MAX_PASSWORD_LENGTH`.
 - **Calendar feed token:** random, 256 bits, one per user, revocable in the profile; the feed
-  only answers GET and contains nothing but the owner's bookings.
+  only answers GET and contains nothing but the bookings of the owner's household (or their own).
 - **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
   off and need a POST (link scanners only GET). `queue_password_reset()` queues at most one reset

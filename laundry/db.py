@@ -53,6 +53,13 @@ SCHEMA = [
         last_error TEXT
     )
     """,
+    # Several accounts can belong to one household (users.household_id); they share the calendar feed
+    """
+    CREATE TABLE IF NOT EXISTS households (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL COLLATE NOCASE
+    )
+    """,
     # Failed logins of the last minutes, for auth.login_blocked(); key is 'user:<name>' or 'ip:<addr>'
     """
     CREATE TABLE IF NOT EXISTS login_failures (
@@ -72,6 +79,7 @@ ADDED_COLUMNS = [
     ('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'calendar_token', 'TEXT'),  # secret of the calendar feed URL, NULL = no feed
+    ('users', 'household_id', 'INTEGER REFERENCES households(id) ON DELETE SET NULL'),  # NULL = on their own
 ]
 
 DEFAULT_SETTINGS = {'horizon_weeks': '4'}

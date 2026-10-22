@@ -22,8 +22,14 @@ UNSUBSCRIBE = {
 def index():
     if request.method == 'GET':
         token = g.user['calendar_token']
+        household = get_db().execute('SELECT name FROM households WHERE id = ?',
+                                     (g.user['household_id'],)).fetchone()
+        housemates = [r['display_name'] for r in get_db().execute(
+            'SELECT display_name FROM users WHERE household_id = ? AND id != ? ORDER BY display_name COLLATE NOCASE',
+            (g.user['household_id'], g.user['id']))]
         return render_template('profile.html', min_pw=MIN_PASSWORD_LENGTH, max_name=MAX_NAME_LENGTH,
                                reminder_choices=REMINDER_CHOICES,
+                               household=household and household['name'], housemates=housemates,
                                feed_url=ical.feed_url(token) if token else None,
                                webcal_url=ical.webcal_url(token) if token else None)
 

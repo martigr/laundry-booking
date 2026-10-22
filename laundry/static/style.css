@@ -186,10 +186,18 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 8px; border-bottom: 1px solid var(--border); }
 td { padding: 12px 8px; border-bottom: 1px solid var(--taken); vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
-td.actions { text-align: right; white-space: nowrap; }
-td.actions form { display: inline; margin: 0 0 0 12px; }
+td.actions { text-align: right; }
+td.actions form { display: inline-block; margin: 2px 0 2px 12px; white-space: nowrap; }
 .badge { display: inline-block; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; background: var(--taken); color: var(--ink-2); }
 .badge.admin { background: var(--accent-soft); color: var(--accent-ink); }
+.household-form { display: flex; gap: 8px; align-items: center; }
+.household-form select { height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); max-width: 150px; }
+.household-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.household-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid var(--taken); }
+.household-list li:last-child { border-bottom: none; }
+.household-list .linklike { font-size: 14px; }
+.household-new { display: flex; gap: 8px; align-items: flex-end; }
+.household-new .field { flex: 1; min-width: 0; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 16px; background: var(--subtle); border-radius: 14px; }
 .inline-form .field { flex: 1 1 160px; }
 
