@@ -29,6 +29,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - One click on a free slot books it, one click on your own booking cancels it
 - "Ganzer Tag" books all free slots of a day at once
 - Adjacent bookings show up as one block in your upcoming bookings (and cancel together)
+- Households: residents that an admin groups into a household see each other's bookings as their own
+  and can cancel them
 - "Now in the laundry room" card, next free slot and your upcoming bookings
 - Past slots can't be booked or cancelled; booking is possible up to N weeks ahead
 - Minimal admin area: create/delete users, group them into households, reset passwords, set the booking horizon;

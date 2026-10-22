@@ -23,7 +23,7 @@
 
 <div class="legend">
   <span><span class="swatch free"></span>Frei</span>
-  <span><span class="swatch mine"></span>Deine Buchung</span>
+  <span><span class="swatch mine"></span>{{ 'Euer Haushalt' if g.user['household_id'] else 'Deine Buchung' }}</span>
   <span><span class="swatch taken"></span>Belegt</span>
   <span class="hint">Tag anklicken, um in der Woche zu buchen.</span>
 </div>

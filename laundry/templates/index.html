@@ -26,7 +26,7 @@
   <section class="split-main" aria-label="Wochenkalender">
     <div class="legend">
       <span><span class="swatch free"></span>Frei</span>
-      <span><span class="swatch mine"></span>Deine Buchung</span>
+      <span><span class="swatch mine"></span>{{ 'Euer Haushalt' if g.user['household_id'] else 'Deine Buchung' }}</span>
       <span><span class="swatch taken"></span>Belegt</span>
     </div>
     <div class="week">
@@ -71,13 +71,13 @@
     </div>
 
     <div class="card">
-      <h2>Deine nächsten Buchungen</h2>
+      <h2>{{ 'Eure nächsten Buchungen' if g.user['household_id'] else 'Deine nächsten Buchungen' }}</h2>
       {% if upcoming %}
       <ul class="upcoming">
         {% for u in upcoming %}
         <li>
           <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
-          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.name }} · {{ u.time }}</span></div>
+          <div class="what"><strong>{{ u.label }}</strong><span>{{ u.name }} · {{ u.time }}{% if u.who %} · {{ u.who }}{% endif %}</span></div>
           <form method="post" action="{{ url_for('bookings.cancel_many') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% for id in u.ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
