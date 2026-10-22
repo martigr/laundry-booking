@@ -345,6 +345,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   startup that the database file and folder are writable and fails with a message naming the
   path, owner and fix, instead of SQLite's "unable to open database file".
   On Windows (no `os.getuid`) the message leaves out the UID and the `chown` hint.
+  Gunicorn runs with `--no-control-socket`: its default socket path is under `$HOME`, which is
+  still `/root` after `setpriv`, and `gunicornc` is not needed.
 
 ## Frontend
 
