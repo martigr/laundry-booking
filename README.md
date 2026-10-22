@@ -14,7 +14,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
     <td width="32%" valign="top"><img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub></td>
     <td valign="top">
       <img src="docs/screenshots/month.png" alt="Month overview"><br><sub>Month overview</sub><br><br>
-      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub>
+      <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub><br><br>
+      <img src="docs/screenshots/audit.png" alt="Audit log"><br><sub>Audit log</sub>
     </td>
   </tr>
 </table>
