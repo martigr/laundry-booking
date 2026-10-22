@@ -18,7 +18,8 @@ flask --app laundry --debug run              # dev server on :5000
 
 - `laundry/`: the app package. `create_app()` in `__init__.py`; blueprints `auth`, `bookings`,
   `profile`, `admin`; data access in `db.py` and `users.py`; clock and slot definitions in `slots.py`;
-  CLI in `cli.py`; security headers and `security.txt` in `security.py`.
+  CLI in `cli.py`; security headers and `security.txt` in `security.py`; audit log in `audit.py`.
+  `__version__` in `__init__.py` must match `pyproject.toml` (shown in the footer).
 - `laundry/templates/`: Jinja templates extending `base.html`; slot rendering in `_macros.html`.
 - `laundry/static/style.css`: all styling; colours are CSS variables in `:root`.
 - `tests/`: pytest, one file per area; fixtures in `conftest.py` (`app`, `client`, `login`, `csrf`, `query`).
@@ -41,6 +42,8 @@ flask --app laundry --debug run              # dev server on :5000
 - Schema lives in `db.SCHEMA`/`init_db()`. New columns on existing tables go into `db.ADDED_COLUMNS`
   (added on startup if missing); other changes need an idempotent step in `init_db()`; always with a
   test that builds the old schema.
+- Log user actions (logins, bookings, profile/admin changes) with `audit.record(con, action, detail)` inside the
+  view's transaction; new actions go into `audit.ACTIONS`. Never put passwords or tokens into `detail`.
 - Mail only through the outbox: queue with the `notifications.queue_*()` functions (unique `dedupe_key`),
   `flask send-notifications` sends. Never call `mail.deliver()` from a view. Tests use the `mailbox` fixture.
   Mail to a user's address only when `users.email_verified = 1` (except the verification mail itself).

@@ -5,6 +5,9 @@ from datetime import timedelta
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+# Shown in the page footer; must match `version` in pyproject.toml (test_version_matches_pyproject)
+__version__ = '1.2.0'
+
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -67,8 +70,8 @@ def create_app(test_config=None):
     app.register_blueprint(ical.bp)
 
     @app.context_processor
-    def mail_flags():
-        return {'mail_enabled': mail.is_configured()}
+    def template_globals():
+        return {'mail_enabled': mail.is_configured(), 'app_version': __version__}
 
     @app.route('/health')
     def health():

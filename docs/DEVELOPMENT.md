@@ -8,7 +8,7 @@ For installation and operation see the [README](../README.md).
 A small Flask app for one shared washing machine in an apartment building.
 Residents log in, see a week (or month) calendar with three slots per day
 and book a free slot (or a whole day) with one click. There are no quotas: first come, first
-served. Admins manage users and the booking horizon.
+served. Admins manage users and the booking horizon and see an audit log.
 
 - **Backend:** Python package `laundry/` built with an app factory and blueprints;
   SQLite through the standard library, no ORM
@@ -21,7 +21,8 @@ served. Admins manage users and the booking horizon.
 
 ```
 laundry/                  # the application package
-├── __init__.py           # create_app(): config, blueprints, /health, schema setup
+├── __init__.py           # create_app(): config, blueprints, /health, schema setup; __version__
+├── audit.py              # audit log: record() of logins, bookings and setting changes, rotation
 ├── db.py                 # connection per request, schema, init_db(), settings
 ├── users.py              # create_user(), get_user*(), set_password(), clean_email(), UserError
 ├── mail.py               # is_configured(), deliver(): one plain-text mail over SMTP
@@ -33,7 +34,7 @@ laundry/                  # the application package
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
 ├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
-├── admin.py              # bp "admin": users, households, settings
+├── admin.py              # bp "admin": users, households, settings, audit log page
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
@@ -47,6 +48,7 @@ laundry/                  # the application package
     ├── login.html        # overrides block body (no header)
     ├── profile.html      # display name, mail notifications, password
     ├── admin.html
+    ├── audit.html        # audit log table with filter and paging
     ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
     ├── forgot_password.html, reset_password.html, unsubscribe.html, confirm_email.html
 tests/
@@ -54,6 +56,7 @@ tests/
 ├── test_auth.py          # login, logout, CSRF, SECRET_KEY, profile
 ├── test_bookings.py      # booking rules, cancel permissions, views, escaping
 ├── test_admin.py         # admin area
+├── test_audit.py         # audit log entries, page, rotation; version in the footer
 ├── test_cli.py           # CLI commands, first-admin bootstrap
 ├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
@@ -143,8 +146,17 @@ at    TEXT   ISO time; older rows are deleted on the next failure
 
 settings
 ────────
-key   TEXT PK      e.g. 'horizon_weeks'
+key   TEXT PK      'horizon_weeks', 'audit_days'
 value TEXT         defaults in db.DEFAULT_SETTINGS
+
+audit_log
+─────────
+at        TEXT     ISO local time
+user_id   INTEGER  who acted; no foreign key, entries outlive deleted users; NULL for failed logins and the CLI
+username  TEXT     their username, what was typed at a failed login, or 'Kommandozeile'
+action    TEXT     key of audit.ACTIONS
+detail    TEXT     German, max. 200 characters
+ip        TEXT     request.remote_addr, NULL for the CLI
 ```
 
 - `UNIQUE (day, slot)` is the only guard against double bookings. `book()` relies on
@@ -209,7 +221,8 @@ value TEXT         defaults in db.DEFAULT_SETTINGS
 | `/admin/users/<id>/household` | POST | `admin.set_household` | admin | `household_id` (empty = none); 400 for an unknown household |
 | `/admin/households` | POST | `admin.create_household` | admin | `name` (1–40 characters, unique ignoring case) |
 | `/admin/households/<id>/delete` | POST | `admin.delete_household` | admin | Members stay, their `household_id` becomes NULL |
-| `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52) |
+| `/admin/settings` | POST | `admin.settings` | admin | `horizon_weeks` (1–52), `audit_days` (1–3650); a missing field stays unchanged, an invalid one saves nothing |
+| `/admin/audit` | GET | `admin.audit_log` | admin | Audit log, newest first, 50 per page; `?kind=login\|booking\|settings\|admin`, `?page=N`; 400 for an unknown kind or page < 1 |
 | `/forgot-password` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
 | `/reset-password/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
 | `/verify-email/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
@@ -287,6 +300,30 @@ Calendar via its web UI). Other households' bookings are never in it.
 - The profile shows the `https://` link (with a copy button from `static/profile.js`, hidden
   where `navigator.clipboard` is missing) and a `webcal://` link that opens "subscribe" on iOS.
   Both are built from `BASE_URL`.
+
+## Audit log
+
+`audit.record(con, action, detail)` writes one row to `audit_log` inside the caller's transaction, so
+an entry only exists if the change was committed. The actor defaults to `g.user`; pass `user=` when
+nobody is logged in yet (login, mail links) and `user=False, username=...` for failed logins. Every
+`action` must be a key of `audit.ACTIONS`, which maps it to the German label and the filter group.
+
+Logged: logins, failed and blocked logins, logouts, password reset by mail link; booking and
+cancelling (with the owner's name when it wasn't one's own booking); profile changes (display name,
+notification settings, confirmed address, unsubscribe, calendar link, password); admin actions
+(users, households, settings) and `create-user`/`make-admin` on the command line. Rejected requests
+(400/403/404, invalid input) are not logged, except logins.
+
+- **Rotation:** each `record()` deletes entries older than the `audit_days` setting (default 90,
+  set in the admin area). No separate job is needed; lowering the value takes effect with the next entry.
+- **Blocked logins** are logged at most once per username and address per `LOGIN_WINDOW`, so
+  hammering `/login` while blocked can't fill the table. Failed logins are already limited by the
+  throttling.
+- Passwords and tokens never go into `detail`. The table holds IP addresses and usernames: keep the
+  retention as short as you need.
+
+When you add a user action, add an `ACTIONS` entry, call `record()` in the view's transaction and
+extend `tests/test_audit.py`.
 
 ## Mail notifications
 
@@ -374,6 +411,9 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 
 ## Frontend
 
+- The footer of every logged-in page shows `laundry.__version__` (`app_version` in templates). It is
+  not shown on the logged-out pages, so the version isn't public.
+
 - Design tokens are CSS variables in `:root` of `style.css`. Blue = yours or your household's,
   grey = someone else's, dashed = free, orange = today and the running slot.
 - Layout: flexbox/grid. The week grid has 7 columns on desktop and switches at
@@ -434,7 +474,8 @@ Run the Docker part locally with
 (`workflow_call`), checks that the tag matches `version` in `pyproject.toml`, builds the image for
 `linux/amd64` and `linux/arm64`, pushes it to `ghcr.io/martigr/laundry-booking` with the tags
 `X.Y.Z`, `X.Y`, `X` and `latest`, and creates the GitHub release with generated notes. To release:
-bump `version` in `pyproject.toml` (semantic versioning: patch for fixes, minor for features, major
+bump `version` in `pyproject.toml` and `__version__` in `laundry/__init__.py` (`test_version_matches_pyproject`
+checks they match; semantic versioning: patch for fixes, minor for features, major
 when an update needs manual steps) in a PR, merge it, then on `main`:
 `git tag v1.2.3 && git push origin v1.2.3`. The first push creates the package as private; make it
 public once under *Packages → laundry-booking → Package settings → Change visibility*.

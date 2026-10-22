@@ -6,7 +6,7 @@ from datetime import timedelta
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import mail, notifications, slots
+from . import audit, mail, notifications, slots
 from .db import get_db
 from .users import MIN_PASSWORD_LENGTH, UserError, get_user, get_user_by_username, set_password
 
@@ -94,6 +94,10 @@ def login():
         # %r keeps line breaks in usernames from forging log lines
         if login_blocked(name):
             current_app.logger.warning('Login blocked (too many failures) for %r from %s', name, request.remote_addr)
+            # Once per window, so hammering a blocked login can't fill the audit log
+            with get_db() as con:
+                if not audit.recently_logged(con, 'login_blocked', name, slots.now() - LOGIN_WINDOW):
+                    audit.record(con, 'login_blocked', 'zu viele Fehlversuche', user=False, username=name)
             return render_template('login.html', username=username,
                                    error='Zu viele Fehlversuche. Bitte in 15 Minuten nochmals versuchen.'), 429
         user = get_user_by_username(name)
@@ -101,6 +105,7 @@ def login():
         if user and valid:
             with get_db() as con:
                 con.execute('DELETE FROM login_failures WHERE key = ?', (f'user:{name}',))
+                audit.record(con, 'login', 'angemeldet bleiben' if request.form.get('remember') else '', user=user)
             session.clear()  # new session id content, against session fixation
             session['user_id'] = user['id']
             session['sv'] = user['session_version']
@@ -108,6 +113,9 @@ def login():
             current_app.logger.info('Login of %r from %s', name, request.remote_addr)
             return redirect(url_for('bookings.index'))
         record_login_failure(name)
+        with get_db() as con:
+            audit.record(con, 'login_failed', 'falsches Passwort' if user else 'unbekannter Benutzername',
+                         user=False, username=name)
         current_app.logger.warning('Failed login for %r from %s', name, request.remote_addr)
         return render_template('login.html', error='Benutzername oder Passwort falsch.', username=username)
 
@@ -118,6 +126,9 @@ def login():
 
 @bp.route('/logout', methods=['POST'])
 def logout():
+    if g.user:
+        with get_db() as con:
+            audit.record(con, 'logout')
     session.clear()
     return redirect(url_for('auth.login'))
 
@@ -154,6 +165,8 @@ def reset_password(token):
         except UserError as e:
             flash(str(e), 'warn')
         else:
+            with get_db() as con:
+                audit.record(con, 'password_reset_link', user=get_user(user_id))
             session.clear()
             flash('Passwort geändert. Du kannst dich jetzt anmelden.', 'ok')
             return redirect(url_for('auth.login'))

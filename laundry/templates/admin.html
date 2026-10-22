@@ -6,6 +6,7 @@
     <div class="kicker">Nur für Admins</div>
     <h1>Verwaltung</h1>
   </div>
+  <a class="btn" href="{{ url_for('admin.audit_log') }}">Audit-Log</a>
 </div>
 
 {% if new_password %}
@@ -117,6 +118,11 @@
       <div class="field">
         <label for="horizon_weeks">Buchbar im Voraus (Wochen)</label>
         <input type="number" id="horizon_weeks" name="horizon_weeks" min="1" max="52" value="{{ horizon_weeks }}" required>
+      </div>
+      <div class="field">
+        <label for="audit_days">Audit-Log aufbewahren (Tage)</label>
+        <input type="number" id="audit_days" name="audit_days" min="1" max="3650" value="{{ audit_days }}" required aria-describedby="audit_days_hint">
+        <span class="hint" id="audit_days_hint">Ältere Einträge werden automatisch gelöscht. <a href="{{ url_for('admin.audit_log') }}">Zum Audit-Log</a></span>
       </div>
       <button type="submit" class="btn btn-dark">Speichern</button>
     </form>

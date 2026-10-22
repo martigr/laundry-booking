@@ -2,7 +2,7 @@
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash
 
-from . import ical, mail
+from . import audit, ical, mail
 from .auth import keep_session, login_required
 from .db import get_db
 from .notifications import REMINDER_CHOICES, queue_email_verification, read_unsubscribe_token, read_verify_token
@@ -41,6 +41,7 @@ def index():
         else:
             with get_db() as con:
                 con.execute('UPDATE users SET display_name = ? WHERE id = ?', (name, g.user['id']))
+                audit.record(con, 'display_name', f'{g.user["display_name"]} → {name}')
             flash('Anzeigename gespeichert.', 'ok')
     elif action == 'notifications':
         try:
@@ -54,9 +55,13 @@ def index():
         if minutes not in dict(REMINDER_CHOICES):
             abort(400)
         changed = email != g.user['email']
+        notify_freed = bool(request.form.get('notify_freed'))
         with get_db() as con:
             con.execute('UPDATE users SET email = ?, reminder_minutes = ?, notify_freed = ? WHERE id = ?',
-                        (email, minutes, int(bool(request.form.get('notify_freed'))), g.user['id']))
+                        (email, minutes, int(notify_freed), g.user['id']))
+            audit.record(con, 'notifications', f'Erinnerung: {dict(REMINDER_CHOICES)[minutes]}, '
+                         f'freie Slots: {"ja" if notify_freed else "nein"}'
+                         + (f', neue Adresse: {email or "keine"}' if changed else ''))
             if changed:
                 con.execute('UPDATE users SET email_verified = 0 WHERE id = ?', (g.user['id'],))
                 queue_email_verification(con, get_user(g.user['id']))
@@ -75,11 +80,13 @@ def index():
         renewed = bool(g.user['calendar_token'])
         with get_db() as con:
             con.execute('UPDATE users SET calendar_token = ? WHERE id = ?', (ical.new_token(), g.user['id']))
+            audit.record(con, 'calendar_link', 'ersetzt den alten' if renewed else '')
         flash('Neuer Kalender-Link erstellt. Der alte funktioniert nicht mehr; abonniere den neuen.'
               if renewed else 'Kalender-Link erstellt.', 'ok')
     elif action == 'calendar_delete':
         with get_db() as con:
             con.execute('UPDATE users SET calendar_token = NULL WHERE id = ?', (g.user['id'],))
+            audit.record(con, 'calendar_link_deleted')
         flash('Kalender-Link gelöscht.', 'ok')
     elif action == 'password':
         if not check_password_hash(g.user['password'], request.form.get('old_password', '')):
@@ -90,6 +97,8 @@ def index():
             try:
                 set_password(g.user['id'], request.form.get('new_password', ''))
                 keep_session()
+                with get_db() as con:
+                    audit.record(con, 'password_changed')
                 flash('Passwort geändert. Auf anderen Geräten bist du jetzt abgemeldet.', 'ok')
             except UserError as e:
                 flash(str(e), 'warn')
@@ -108,6 +117,7 @@ def confirm_email(token):
     if request.method == 'POST' and not done:
         with get_db() as con:
             con.execute('UPDATE users SET email_verified = 1 WHERE id = ? AND email = ?', (user['id'], data[1]))
+            audit.record(con, 'email_confirmed', data[1], user=user)
         done = True
     return render_template('confirm_email.html', email=data[1], done=done)
 
@@ -124,5 +134,7 @@ def unsubscribe(token):
     if request.method == 'POST':
         with get_db() as con:
             con.execute(f'UPDATE users SET {column} = 0 WHERE id = ?', (user_id,))
+            if user := get_user(user_id):
+                audit.record(con, 'unsubscribe', label, user=user)
         done = True
     return render_template('unsubscribe.html', label=label, done=done)

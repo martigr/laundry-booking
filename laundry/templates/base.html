@@ -18,7 +18,7 @@
     <nav class="mainnav" aria-label="Hauptnavigation">
       <a href="{{ url_for('bookings.index') }}" class="{{ 'active' if request.endpoint in ('bookings.index', 'bookings.month') }}">Kalender</a>
       {% if g.user['is_admin'] %}
-      <a href="{{ url_for('admin.index') }}" class="{{ 'active' if request.endpoint == 'admin.index' }}">Verwaltung</a>
+      <a href="{{ url_for('admin.index') }}" class="{{ 'active' if request.endpoint in ('admin.index', 'admin.audit_log') }}">Verwaltung</a>
       {% endif %}
     </nav>
     <div class="userbox">
@@ -41,6 +41,7 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+<footer class="site-footer">Waschküche · Version {{ app_version }}</footer>
 <dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
   <form method="dialog" class="modal-body">
     <h2 id="confirm-title"></h2>
