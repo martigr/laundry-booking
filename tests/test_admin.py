@@ -77,6 +77,7 @@ def test_households(client, query, login):
     assert f'<option value="{hid}" selected>Müller 2. OG</option>' in page
     assert '1 Mitglied' in page
     assert 'data-confirm-title="Haushalt löschen?"' in page
+    assert 'name="display_name" placeholder="z. B. Anna Müller"' in page  # a person, not a household
 
     client.post('/admin/users/2/household', data={'household_id': '', 'csrf_token': t})
     assert query("SELECT household_id FROM users WHERE username = 'bob'") == [(None,)]

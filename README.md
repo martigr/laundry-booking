@@ -23,7 +23,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 
 ## Features
 
-- Login per resident or household (user with a free display name); "stay signed in" option
+- Login per resident (user with a free display name), several residents can form a household; "stay signed in" option
 - Week view (default) and month overview, usable on phones
 - Daily slots: Vormittag 07–12, Nachmittag 12–17, Abend 17–22
 - One click on a free slot books it, one click on your own booking cancels it
