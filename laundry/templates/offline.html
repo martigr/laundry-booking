@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Keine Verbindung – Waschküche{% endblock %}
+{# Shown by the service worker (sw.js) when a page can't be loaded. Cached once for every visitor,
+   so nothing personal and no flash messages here. #}
+{% block body %}
+<main class="offline">
+  <div class="card offline-card">
+    <span class="brand-mark">{% include '_logo.html' %}</span>
+    <h1>Keine Verbindung</h1>
+    <p>Die Waschküche ist gerade nicht erreichbar. Prüfe deine Internetverbindung und versuche es nochmals.
+      Die Seite lädt von selbst neu, sobald du wieder online bist.</p>
+    {# href="" reloads the address that failed, not /offline #}
+    <a class="btn btn-primary" href="">Erneut versuchen</a>
+  </div>
+</main>
+<script src="{{ url_for('static', filename='offline.js') }}" defer></script>
+{% endblock %}
