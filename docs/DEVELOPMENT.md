@@ -13,9 +13,10 @@ served. Admins manage users and the booking horizon and see an audit log.
 - **Backend:** Python package `laundry/` built with an app factory and blueprints;
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
-  and practically no JavaScript (only the confirmation dialog in `static/confirm.js`
-  and the live password-repeat check in `static/profile.js`; the booking note popover uses the HTML `popover`
-  attribute, no script); no inline scripts, the CSP forbids them
+  and practically no JavaScript (only the confirmation dialog in `static/confirm.js`,
+  the live password-repeat check in `static/profile.js` and the service worker of the home screen app;
+  the booking note popover uses the HTML `popover` attribute, no script); no inline scripts, the CSP
+  forbids them
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -37,11 +38,15 @@ laundry/                  # the application package
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
 ├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
 ├── guide.py              # bp "help": the help page (how to book and cancel, with screenshots)
+├── pwa.py                # bp "pwa": service worker /sw.js and offline page /offline (home screen app)
 ├── admin.py              # bp "admin": users, households, settings, audit log page
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
 ├── static/profile.js     # live "passwords don't match" hint on the profile page
+├── static/pwa.js         # registers the service worker
+├── static/offline.js     # offline page: reload when back online
+├── static/manifest.webmanifest, static/icons/*.png  # home screen app (scripts/icons.py)
 ├── static/help/*.png     # screenshots of the help page (scripts/screenshots.py)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
@@ -56,6 +61,8 @@ laundry/                  # the application package
     ├── help.html         # help page for residents
     ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
     ├── privacy.html      # privacy notice; own logged-out layout, normal layout when logged in
+    ├── offline.html      # "Keine Verbindung", cached by the service worker
+    ├── sw.js             # the service worker (a template for its URLs and cache name)
     ├── forgot_password.html, reset_password.html, unsubscribe.html, confirm_email.html
 tests/
 ├── conftest.py           # fixtures: app, client, login, csrf, query, reservations
@@ -66,6 +73,7 @@ tests/
 ├── test_cli.py           # CLI commands, first-admin bootstrap
 ├── test_help.py          # help page: content, settings, screenshots exist
 ├── test_privacy.py       # privacy page with and without login, contact, footer links
+├── test_pwa.py           # manifest, icons, service worker, offline page
 ├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
 └── test_security.py      # headers, input limits, redirects, login throttling, sessions, security.txt, backup
@@ -74,6 +82,7 @@ docker-compose.yml        # web + notifier container, settings from .env (.env.e
 SECURITY.md               # how to report vulnerabilities
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
 scripts/screenshots.py        # retakes the README and help page screenshots (needs Playwright)
+scripts/icons.py              # draws the home screen icons from the logo (needs Pillow)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
@@ -243,6 +252,8 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/unsubscribe/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
 | `/calendar/<token>.ics` | GET | `ical.feed` | token | The bookings of the token owner's household (or their own) as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
+| `/sw.js` | GET | `pwa.service_worker` | public | Service worker; `Cache-Control: no-cache` |
+| `/offline` | GET | `pwa.offline` | public | "Keine Verbindung", cached by the service worker; nothing personal |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
 | `/privacy` | GET | `privacy` | public | Privacy notice (German); `PRIVACY_CONTROLLER`/`PRIVACY_CONTACT`, audit retention from the settings; contact links only as `mailto:`/`http(s):` |
 
@@ -402,8 +413,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 - **Headers** (`security.add_headers()`): a strict CSP (`script-src 'self'`, no inline scripts;
   `style-src` allows inline `style=""` attributes; `frame-ancestors 'none'`, `form-action 'self'`),
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (tokens
-  in reset/unsubscribe URLs), `Cache-Control: no-store` except for static files, and HSTS when the
-  request came over HTTPS. JavaScript goes into files in `static/`.
+  in reset/unsubscribe URLs), `Cache-Control: no-store` except for static files and `/sw.js`
+  (`no-cache`), and HSTS when the request came over HTTPS. JavaScript goes into files in `static/`.
 - **Limits:** `MAX_CONTENT_LENGTH` = 64 KB (413 above), passwords 10–128 characters
   (`users.check_password()`, also for `ADMIN_PASSWORD`), dates 2000–2999.
 - **Escaping:** Jinja autoescape covers HTML. Confirmation texts go into plain `data-confirm*`
@@ -467,6 +478,18 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   `pip install playwright && playwright install chromium`, or point `CHROMIUM=` at an installed
   Chromium. Then copy the printed sizes into the `width`/`height` attributes in `help.html` (2x
   images: half) and of `week.png` in `site/index.html`. The images are saved as palette PNGs.
+- **Home screen app:** `base.html` links `static/manifest.webmanifest` (name, `display: standalone`,
+  icons; URLs relative to the manifest, so a path prefix works), the `apple-touch-icon` (iOS ignores
+  the manifest icons) and `static/pwa.js`, which registers the service worker from `data-sw`
+  (only in secure contexts: HTTPS or localhost). The icons are committed PNGs drawn by
+  `python scripts/icons.py` (needs Pillow); rerun it when the logo or `--accent` changes.
+  The worker (`templates/sw.js`, served at `/sw.js` so its scope is the whole app) **never caches
+  pages**: they show bookings, carry CSRF tokens and must be current. It precaches only `/offline`,
+  `style.css` and `offline.js`, answers GET navigations from the network (with navigation preload)
+  and falls back to the offline page when that fails; forms (POST) and other requests pass through.
+  The cache name contains `__version__`, so each release installs a new worker and refreshes the
+  cache. The worker fetches `/offline` with the visitor's cookies, so that page must not show
+  anything personal or consume flash messages (`test_pwa.py` checks both).
 - The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with these
   screenshots. Its texts follow the settings (slot times, booking horizon), the role (admin
   paragraph) and whether mail is configured. When the calendar, booking or cancelling changes, update

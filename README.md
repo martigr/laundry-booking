@@ -40,6 +40,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
   admins can cancel any booking
 - Audit log for admins: logins and failed login attempts, bookings and cancellations, profile and admin changes,
   with time and IP address; entries are deleted after a configurable number of days (default 90)
+- Installable as a home screen app (icon, opens without the browser bar); a service worker shows an
+  offline page when the server can't be reached, pages themselves are never cached
 - Help page for residents ("Hilfe") with screenshots: how to book a slot or a whole day and how to cancel
 - The app version is shown at the bottom of every page (when logged in)
 - Privacy notice at `/privacy` (German, public), linked in the footer of every page: who runs the app,
@@ -285,6 +287,15 @@ themselves, so new bookings show up after the next refresh, not instantly:
 The link needs HTTPS with a valid certificate (iOS rejects self-signed ones) and a correct
 `BASE_URL`. Anyone with the link sees that household's bookings; "Neuen Link erstellen"
 in the profile makes the old one stop working.
+
+### Home screen app
+
+Residents can put the app on their home screen (iPhone: Safari → *Share → Add to Home Screen*;
+Android: browser menu → *Install app*). It then opens with its own icon and without the address bar.
+Nothing needs to be configured. Over HTTPS (or on `localhost`) the browser also installs a small
+service worker (`/sw.js`) that shows a "Keine Verbindung" page when the server can't be reached;
+over plain HTTP that part is skipped. On the iPhone the home screen app keeps its own cookies, so
+residents log in there once more.
 
 ## Configuration
 
