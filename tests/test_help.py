@@ -13,6 +13,8 @@ def test_help_page(client, login):
     assert 'Auf der Anmeldeseite unter «Passwort vergessen?»' in html  # mail is configured in the tests
     assert 'Als Admin' not in html
     assert 'href="/privacy">Datenschutz</a> (Link ganz unten' in html
+    assert '<a href="#notiz">Eine Notiz zur Buchung</a>' in html
+    assert '«Deine nächsten Buchungen» unter der Buchung' in html
 
 
 def test_help_link_in_navigation(client, login):

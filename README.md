@@ -30,6 +30,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - One click on a free slot books it, one click on your own booking cancels it
 - "Ganzer Tag" books all free slots of a day at once
 - Adjacent bookings show up as one block in your upcoming bookings (and cancel together)
+- Short note on a booking (up to 80 characters, e.g. "Hole die Wäsche erst um 13 Uhr"), set in your upcoming
+  bookings and shown to everyone in the calendar
 - Households: residents that an admin groups into a household see each other's bookings as their own
   and can cancel them
 - "Now in the laundry room" card, next free slot and your upcoming bookings
@@ -269,7 +271,7 @@ SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 
 Every resident can create a personal calendar link under *Profil → Kalender abonnieren*
 (`BASE_URL/calendar/<token>.ics`). It contains their own bookings, or, if an admin has put them
-into a household (*Verwaltung → Haushalte*), the bookings of all its members, each named. Calendar apps fetch it
+into a household (*Verwaltung → Haushalte*), the bookings of all its members, each named, with their notes. Calendar apps fetch it
 themselves, so new bookings show up after the next refresh, not instantly:
 
 - **iPhone/iPad:** tap the `webcal://` link in the profile, or *Settings → Calendar → Accounts →

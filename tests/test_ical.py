@@ -79,6 +79,17 @@ def test_feed_merges_adjacent_slots_and_converts_winter_time(app, client, login,
     assert len(set(uids)) == 2 and all(u.endswith('@wk.test') for u in uids)
 
 
+def test_feed_contains_the_note(app, client, login, query):
+    book(app, 'bob', ('2026-11-02', 'Abend'), ('2026-11-03', 'Abend'))
+    with app.app_context():
+        with get_db() as con:
+            con.execute("UPDATE reservations SET note = 'Hole die Wäsche, 13 Uhr' WHERE day = '2026-11-02'")
+    create_link(client, login)
+    first, second = events(client.get(f'/calendar/{calendar_token(query)}.ics').get_data(as_text=True))
+    assert 'DESCRIPTION:Notiz: Hole die Wäsche\\, 13 Uhr\\nGebucht in der Waschküche-App: https://wk.test/' in first
+    assert 'DESCRIPTION:Gebucht in der Waschküche-App: https://wk.test/' in second
+
+
 def test_feed_keeps_four_weeks_of_past_bookings(app, client, login, query):
     book(app, 'bob', ('2026-09-16', 'Abend'), ('2026-09-18', 'Abend'), ('2026-10-15', 'Vormittag'))
     create_link(client, login)

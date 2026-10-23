@@ -19,6 +19,7 @@ ACTIONS = {
     'password_reset_link': ('Passwort per Mail-Link zurückgesetzt', 'login'),
     'book': ('Gebucht', 'booking'),
     'cancel': ('Storniert', 'booking'),
+    'note': ('Notiz geändert', 'booking'),
     'display_name': ('Anzeigename geändert', 'settings'),
     'notifications': ('Benachrichtigungen geändert', 'settings'),
     'email_confirmed': ('E-Mail-Adresse bestätigt', 'settings'),

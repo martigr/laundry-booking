@@ -125,6 +125,7 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .slot .s-name { font-weight: 700; }
 .slot .s-who { font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
 .slot .s-meta { font-size: 12px; opacity: .9; }
+.slot .s-note { font-size: 12px; font-style: italic; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .slot.free { background: var(--surface); border: 1.5px dashed #9AA6B2; color: var(--accent-ink); cursor: pointer; }
 .slot.free:hover { background: var(--accent-soft); border-style: solid; border-color: var(--accent); }
 .slot.mine { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -148,6 +149,7 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .now-card .who { font-size: 22px; font-weight: 800; }
 .now-card .meta { font-size: 14px; color: #C9D3DE; }
 .now-card a { color: #fff; }
+.now-card .note { font-size: 14px; font-style: italic; overflow-wrap: anywhere; }
 .status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; }
 .status.busy { color: #FDBA74; } .status.busy .dot { background: var(--warm); }
@@ -156,7 +158,7 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .bar div { height: 100%; background: var(--warm); }
 
 .upcoming { list-style: none; margin: 0; padding: 0; }
-.upcoming li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--taken); }
+.upcoming li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--taken); }
 .upcoming form { margin: 0; }
 .datebadge { width: 48px; height: 48px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-ink); display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none; }
 .datebadge span:first-child { font-size: 11px; font-weight: 700; text-transform: uppercase; }
@@ -164,6 +166,14 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .upcoming .what { flex: 1; min-width: 0; }
 .upcoming .what strong { display: block; font-size: 14px; }
 .upcoming .what span { font-size: 13px; color: var(--muted); }
+.note-edit { flex-basis: 100%; min-width: 0; font-size: 13px; }
+.note-edit summary { cursor: pointer; min-height: 28px; display: flex; align-items: center; gap: 6px; list-style: none; padding-left: 60px; color: var(--ink-2); overflow-wrap: anywhere; }
+.note-edit summary::-webkit-details-marker { display: none; }
+.note-edit .note { font-style: italic; }
+.note-edit .note-action { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.note-edit form { display: flex; gap: 8px; margin-top: 6px; }
+.note-edit input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); font: inherit; }
+.note-edit input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* --- Month view -------------------------------------------------------- */
 .month { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }

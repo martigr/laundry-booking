@@ -61,6 +61,7 @@
       {% if running %}
       <div class="who">{{ 'Du' if running.mine else running.res['display_name'] }}</div>
       <div class="meta">{{ running.name }} · bis {{ running.end.strftime('%H:%M') }}</div>
+      {% if running.note %}<div class="note">«{{ running.note }}»</div>{% endif %}
       <div class="bar"><div style="width: {{ running.progress }}%"></div></div>
       {% else %}
       <div class="who">Niemand gebucht</div>
@@ -84,6 +85,16 @@
             <input type="hidden" name="next" value="{{ request.full_path }}">
             <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.name }} stornieren">Stornieren</button>
           </form>
+          <details class="note-edit">
+            <summary>{% if u.note %}<span class="note">«{{ u.note }}»</span> <span class="note-action">Ändern</span>{% else %}<span class="note-action">+ Notiz für die anderen</span>{% endif %}</summary>
+            <form method="post" action="{{ url_for('bookings.note') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% for id in u.ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <input type="text" name="note" value="{{ u.note }}" maxlength="{{ max_note }}" placeholder="z. B. Hole die Wäsche um 13 Uhr" aria-label="Notiz zu {{ u.label }} {{ u.name }}">
+              <button type="submit" class="btn btn-small">Speichern</button>
+            </form>
+          </details>
         </li>
         {% endfor %}
       </ul>

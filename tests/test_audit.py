@@ -52,10 +52,14 @@ def test_bookings_are_logged(client, login, query):
     client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})  # taken: not logged
     client.post('/book-day', data={'day': '2026-10-17', 'csrf_token': t})
     rid = query("SELECT id FROM reservations WHERE day = '2026-10-16'")[0][0]
+    client.post('/note', data={'id': rid, 'note': '60°', 'csrf_token': t})
+    client.post('/note', data={'id': rid, 'note': '', 'csrf_token': t})
     client.post(f'/cancel/{rid}', data={'csrf_token': t})
     assert entries(query)[1:] == [
         ('bob', 'book', 'Fr 16. Okt. · Abend'),
         ('bob', 'book', 'Sa 17. Okt. · ganzer Tag'),
+        ('bob', 'note', 'Fr 16. Okt. · Abend: «60°»'),
+        ('bob', 'note', 'Fr 16. Okt. · Abend: gelöscht'),
         ('bob', 'cancel', 'Fr 16. Okt. · Abend'),
     ]
 

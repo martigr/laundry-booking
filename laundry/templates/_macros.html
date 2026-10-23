@@ -4,6 +4,7 @@
 {%- set inner -%}
   <span class="s-name">{{ c.slot }}</span>
   <span class="s-who">{{ who }}</span>
+  {% if c.note %}<span class="s-note" title="{{ c.note }}">{{ c.note }}</span>{% endif %}
   <span class="s-meta">{% if c.running and c.res %}Läuft gerade{% else %}<span class="t-long">{{ c.time }}</span><span class="t-short">{{ c.short }}</span>{% endif %}</span>
   {% if c.cancelable %}<span class="s-hover">Stornieren</span>{% endif %}
 {%- endset -%}
@@ -19,7 +20,7 @@
 <form method="post" action="{{ url_for('bookings.cancel', rid=c.res['id']) }}"{% if not c.ours %} data-confirm-title="Fremde Buchung stornieren?" data-confirm="Die Buchung von {{ c.res['display_name'] }} ({{ c.label }}) wird storniert." data-confirm-ok="Stornieren" data-confirm-danger{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="next" value="{{ request.full_path }}">
-  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}) stornieren">{{ inner }}</button>
+  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}{{ ', Notiz: ' ~ c.note if c.note }}) stornieren">{{ inner }}</button>
 </form>
 {%- else -%}
 <div class="{{ classes }}">{{ inner }}</div>
