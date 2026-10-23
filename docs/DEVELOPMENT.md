@@ -40,7 +40,7 @@ laundry/                  # the application package
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
 ├── static/profile.js     # live "passwords don't match" hint on the profile page
-├── static/help/*.png     # screenshots of the help page (scripts/help-screenshots.py)
+├── static/help/*.png     # screenshots of the help page (scripts/screenshots.py)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
     ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
@@ -69,7 +69,7 @@ docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
 docker-compose.yml        # web + notifier container, settings from .env (.env.example)
 SECURITY.md               # how to report vulnerabilities
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
-scripts/help-screenshots.py   # retakes the help page screenshots (needs Playwright)
+scripts/screenshots.py        # retakes the README and help page screenshots (needs Playwright)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
@@ -431,17 +431,21 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   `data-confirm-ok` (button text) and `data-confirm-danger` (red button). `confirm.js` shows
   the `<dialog>` from `base.html`; without JavaScript the form submits directly, so the
   permission check belongs in the view as always. Never use `window.confirm()` directly.
-- The README screenshots live in `docs/screenshots/` (desktop 1280 px wide, phone 390 px
-  at 2x). Retake them when the UI changes visibly, with demo data and a daytime clock so
-  the "running" slot is visible.
-- The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with screenshots
-  in `static/help/`. Its texts follow the settings (slot times, booking horizon), the role (admin
+- Screenshots are taken by `scripts/screenshots.py`, each set on its own temporary database with
+  fixed data and a fixed clock (Thursday afternoon, so today and a running slot are visible):
+  - `readme`: `docs/screenshots/` for the README and the project page (desktop 1280 px wide, phone
+    390 px at 2x; households, five users, a week of audit entries). The Pages workflow copies them.
+  - `help`: `static/help/` for the help page (demo data, logged in as bob, highlights in orange).
+
+  Retake them when the UI changes visibly: `python scripts/screenshots.py` (both sets) or
+  `python scripts/screenshots.py help`. It needs Playwright, which is not in `requirements-dev.txt`:
+  `pip install playwright && playwright install chromium`, or point `CHROMIUM=` at an installed
+  Chromium. Then copy the printed sizes into the `width`/`height` attributes in `help.html` (2x
+  images: half) and of `week.png` in `site/index.html`. The images are saved as palette PNGs.
+- The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with these
+  screenshots. Its texts follow the settings (slot times, booking horizon), the role (admin
   paragraph) and whether mail is configured. When the calendar, booking or cancelling changes, update
-  `help.html` and retake the screenshots with `scripts/help-screenshots.py` (temporary database, demo
-  data, fixed clock, logged in as bob; highlights in orange). It needs Playwright, which is not in
-  `requirements-dev.txt`: `pip install playwright && playwright install chromium`, or point
-  `CHROMIUM=` at an installed Chromium. Then copy the printed sizes into the `width`/`height` of
-  `help.html` (2x images: half). The images are palette PNGs, about 300 KB together.
+  `help.html` too.
 
 ## Testing
 
