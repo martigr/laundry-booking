@@ -55,7 +55,7 @@ def create_app(test_config=None):
         n = app.config['TRUSTED_PROXIES']
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n)
 
-    from . import admin, auth, bookings, cli, db, ical, mail, profile, security
+    from . import admin, auth, bookings, cli, db, guide, ical, mail, profile, security
 
     db.ensure_writable(app.config['DATABASE'])
 
@@ -68,6 +68,7 @@ def create_app(test_config=None):
     app.register_blueprint(profile.bp)
     app.register_blueprint(admin.bp)
     app.register_blueprint(ical.bp)
+    app.register_blueprint(guide.bp)
 
     @app.context_processor
     def template_globals():

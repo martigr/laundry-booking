@@ -38,6 +38,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
   admins can cancel any booking
 - Audit log for admins: logins and failed login attempts, bookings and cancellations, profile and admin changes,
   with time and IP address; entries are deleted after a configurable number of days (default 90)
+- Help page for residents ("Hilfe") with screenshots: how to book a slot or a whole day and how to cancel
 - The app version is shown at the bottom of every page (when logged in)
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";

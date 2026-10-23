@@ -16,7 +16,7 @@ flask --app laundry --debug run              # dev server on :5000
 
 ## Layout
 
-- `laundry/`: the app package. `create_app()` in `__init__.py`; blueprints `auth`, `bookings`,
+- `laundry/`: the app package. `create_app()` in `__init__.py`; blueprints `auth`, `bookings`, `help` (`guide.py`),
   `profile`, `admin`; data access in `db.py` and `users.py`; clock and slot definitions in `slots.py`;
   CLI in `cli.py`; security headers and `security.txt` in `security.py`; audit log in `audit.py`.
   `__version__` in `__init__.py` must match `pyproject.toml` (shown in the footer).
