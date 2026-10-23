@@ -25,7 +25,7 @@ def test_help_link_in_navigation(client, login):
 def test_help_screenshots_exist(client, login):
     login('bob')
     images = re.findall(r'<img src="([^"]+)"', client.get('/help').get_data(as_text=True))
-    assert len(images) == 7
+    assert len(images) == 9
     for src in images:
         r = client.get(src)
         assert r.status_code == 200 and r.mimetype == 'image/png'

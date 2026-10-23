@@ -174,6 +174,7 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .note-badge.empty { background: var(--surface); color: var(--accent); border: 1.5px dashed var(--accent); }
 .note-badge:hover { background: var(--accent-ink); color: #fff; }
 .note-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.upcoming .note-badge { top: -8px; right: -10px; }  /* clear of the weekday in the date badge */
 .note-pop .modal-body { display: flex; }  /* not display: contents from .day form */
 .note-pop textarea { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border-strong); font: inherit; resize: vertical; }
 .note-pop textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
