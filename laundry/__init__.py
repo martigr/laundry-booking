@@ -28,6 +28,9 @@ def create_app(test_config=None):
         TRUSTED_PROXIES=int(os.environ.get('TRUSTED_PROXIES', '0')),
         # Who to contact about security problems of this instance, shown in /.well-known/security.txt
         SECURITY_CONTACT=os.environ.get('SECURITY_CONTACT'),
+        # Who runs this instance and how to reach them, shown on the privacy page (/privacy)
+        PRIVACY_CONTROLLER=os.environ.get('PRIVACY_CONTROLLER'),
+        PRIVACY_CONTACT=os.environ.get('PRIVACY_CONTACT'),
         # Mail (e.g. Infomaniak: mail.infomaniak.com, 587/starttls or 465/ssl)
         SMTP_HOST=os.environ.get('SMTP_HOST'),
         SMTP_PORT=int(os.environ.get('SMTP_PORT', '587')),
@@ -55,7 +58,7 @@ def create_app(test_config=None):
         n = app.config['TRUSTED_PROXIES']
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n)
 
-    from . import admin, auth, bookings, cli, db, ical, mail, profile, security
+    from . import admin, auth, bookings, cli, db, ical, mail, privacy, profile, security
 
     db.ensure_writable(app.config['DATABASE'])
 
@@ -63,6 +66,7 @@ def create_app(test_config=None):
     auth.init_app(app)
     cli.init_app(app)
     security.init_app(app)
+    privacy.init_app(app)
     app.register_blueprint(auth.bp)
     app.register_blueprint(bookings.bp)
     app.register_blueprint(profile.bp)

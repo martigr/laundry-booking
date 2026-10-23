@@ -41,7 +41,7 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="site-footer">Waschküche · Version {{ app_version }}</footer>
+<footer class="site-footer">Waschküche · Version {{ app_version }} · <a href="{{ url_for('privacy') }}">Datenschutz</a></footer>
 <dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
   <form method="dialog" class="modal-body">
     <h2 id="confirm-title"></h2>

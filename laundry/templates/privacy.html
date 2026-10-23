@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Datenschutz – Waschküche{% endblock %}
+{% block body %}
+{% if g.user %}
+{{ super() }}
+{% else %}
+{# Logged out: no user bar and no version in the footer #}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="{{ url_for('auth.login') }}">
+      <span class="brand-mark">{% include '_logo.html' %}</span>
+      <span class="brand-name">Waschküche</span>
+    </a>
+    <a class="btn btn-small" href="{{ url_for('auth.login') }}" style="margin-left:auto">Anmelden</a>
+  </div>
+</header>
+<main class="page">{{ self.content() }}</main>
+<footer class="site-footer"><a href="{{ url_for('privacy') }}">Datenschutz</a></footer>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="narrow privacy" style="display:flex;flex-direction:column;gap:20px">
+  <div class="page-head">
+    <div>
+      <div class="kicker">Waschküche</div>
+      <h1>Datenschutz</h1>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Verantwortlich</h2>
+    {% if controller or contact %}
+    <p>{% if controller %}{{ controller }}{% endif %}{% if controller and contact %}<br>{% endif %}
+      {% if contact_href %}<a href="{{ contact_href }}">{{ contact }}</a>{% elif contact %}{{ contact }}{% endif %}</p>
+    {% else %}
+    <p>Der Betreiber dieser Installation hat noch keine Kontaktangaben hinterlegt. Bitte wende dich an den Admin im Haus.</p>
+    {% endif %}
+    <p class="hint">An diese Stelle kannst du dich mit allen Fragen zu deinen Daten wenden.</p>
+  </section>
+
+  <section class="card">
+    <h2>Wozu</h2>
+    <p>Die App organisiert die gemeinsame Waschmaschine im Haus. Deine Daten werden nur dafür bearbeitet
+      und für den sicheren Betrieb (Schutz vor Missbrauch, Nachvollziehbarkeit von Änderungen).
+      Es gibt keine Werbung, kein Tracking und keine Weitergabe zu anderen Zwecken.</p>
+  </section>
+
+  <section class="card">
+    <h2>Welche Daten</h2>
+    <ul>
+      <li><strong>Konto:</strong> Benutzername, Anzeigename, Passwort (nur als nicht umkehrbarer Hash),
+        Haushalt (vom Admin zugeordnet), Admin-Rolle.</li>
+      <li><strong>Buchungen:</strong> welcher Slot an welchem Tag von wem gebucht ist.</li>
+      <li><strong>E-Mail (freiwillig):</strong> Adresse, Bestätigungsstatus und deine Einstellungen zu Erinnerungen
+        und Benachrichtigungen.</li>
+      <li><strong>Audit-Log:</strong> Anmeldungen, Buchungen und Änderungen an Profil und Verwaltung, mit Zeitpunkt
+        und IP-Adresse.</li>
+      <li><strong>Server-Protokoll:</strong> Anmeldungen und fehlgeschlagene Anmeldeversuche mit Benutzername und
+        IP-Adresse.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Wer sieht was</h2>
+    <ul>
+      <li>Alle angemeldeten Bewohner sehen im Kalender den <strong>Anzeigenamen</strong> bei jeder Buchung.</li>
+      <li>Mitglieder deines Haushalts sehen eure gemeinsamen Buchungen und können sie stornieren.</li>
+      <li>Admins sehen die Benutzerliste mit E-Mail-Adressen und das Audit-Log.</li>
+      <li>Der Kalender-Link im Profil enthält deine Buchungen; wer den Link kennt, kann sie lesen.
+        Du kannst ihn im Profil jederzeit erneuern oder löschen.</li>
+      <li>Die App läuft auf einem Server, den der Betreiber selbst oder ein Hosting-Anbieter betreibt.
+        Mails werden über einen Mail-Anbieter verschickt. Diese Anbieter bearbeiten die Daten nur im Auftrag.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Wie lange</h2>
+    <ul>
+      <li>Konto und Buchungen: bis ein Admin das Konto löscht. Die Buchungen werden dabei mitgelöscht.</li>
+      <li>Audit-Log: {{ audit_days }} Tage, danach automatisch gelöscht.</li>
+      <li>Verschickte Mails: {{ keep_mail_days }} Tage.</li>
+      <li>Fehlgeschlagene Anmeldeversuche (Schutz vor Passwort-Raten): 15 Minuten.</li>
+      <li>Server-Protokoll: je nach Einstellung des Servers, in der Regel einige Wochen.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Cookies</h2>
+    <p>Die App setzt ein einziges, technisch notwendiges Cookie: das Sitzungs-Cookie, das dich angemeldet hält
+      und Formulare schützt. Mit „Angemeldet bleiben“ gilt es 30 Tage, sonst bis du den Browser schliesst.
+      Es gibt keine Analyse- oder Werbe-Cookies und keine Inhalte von fremden Servern.</p>
+  </section>
+
+  <section class="card">
+    <h2>Deine Rechte</h2>
+    <p>Du kannst Auskunft über deine Daten verlangen und sie berichtigen oder löschen lassen. Wende dich dafür an die
+      oben genannte Stelle. Anzeigename, E-Mail-Adresse und Benachrichtigungen kannst du im Profil selbst ändern.</p>
+  </section>
+</div>
+{% endblock %}
