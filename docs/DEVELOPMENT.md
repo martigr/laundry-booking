@@ -14,7 +14,8 @@ served. Admins manage users and the booking horizon and see an audit log.
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only the confirmation dialog in `static/confirm.js`
-  and the live password-repeat check in `static/profile.js`); no inline scripts, the CSP forbids them
+  and the live password-repeat check in `static/profile.js`; the booking note popover uses the HTML `popover`
+  attribute, no script); no inline scripts, the CSP forbids them
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -44,7 +45,7 @@ laundry/                  # the application package
 ├── static/help/*.png     # screenshots of the help page (scripts/screenshots.py)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
-    ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
+    ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static); note_button(): note badge + popover
     ├── _logo.html        # inline SVG logo
     ├── index.html        # week view + side cards
     ├── month.html        # month overview (links into week view)
@@ -262,9 +263,14 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
 - **Notes:** `note()` sets the same note on every booking of a block (`MAX_NOTE` = 80 characters after
   `clean_note()` joined it into one line; empty = NULL). Owner or housemate only, admins can't edit others'
   notes (they can cancel the booking). Ended slots are skipped, like when cancelling; same 404/403 rules
-  (`open_reservations()`). Everyone sees the note in the calendar cell, the month pill's tooltip and the
-  "Jetzt in der Waschküche" card; the upcoming list has a `<details>` form to edit it. `group_blocks()` gives
-  a block's `note` (each different note once, joined with " · ").
+  (`open_reservations()`); `clear=1` deletes the note like an empty one. `group_blocks()` gives a block's `note`
+  (each different note once, joined with " · "), and `build_days()` sets `block` on every booked cell.
+  Display: the `note_button()` macro in `_macros.html` renders a small badge in the corner of the cell (dark
+  speech bubble = note, dashed "+" = your own upcoming booking without one) and a popover (`popover` attribute,
+  `popovertarget`, styled like `.modal`; no JavaScript): the note for everyone else, a form for the household.
+  The form edits the cell's whole block. The same badge sits on the date badge in the upcoming list. Cells keep
+  their size; the note text itself only appears in the popover, the month pill's tooltip and the
+  "Jetzt in der Waschküche" card.
 - **Households:** `bookings.household_ids()` returns the current user's id plus those of everyone with
   the same `household_id` (cached on `g`). A booking by any of them counts as the user's own:
   `build_cell()` sets `ours` (state `mine`, blue, cancelable, no "Fremde Buchung" dialog) next to

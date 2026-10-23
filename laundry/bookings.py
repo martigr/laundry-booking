@@ -13,6 +13,7 @@ from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bo
 bp = Blueprint('bookings', __name__)
 
 MAX_NOTE = 80  # characters of a booking note
+bp.add_app_template_global(MAX_NOTE, 'max_note')  # global, so the macros in _macros.html see it
 
 
 def household_ids():
@@ -61,6 +62,7 @@ def build_cell(day, slot_name, res, current, last_day):
         'state': state,
         'bookable': state == 'free',
         'cancelable': bool(res) and not past and (ours or bool(g.user['is_admin'])),
+        'note_editable': ours and not past,
     }
 
 
@@ -72,6 +74,18 @@ def build_days(first, count, current):
     for i in range(count):
         d = first + timedelta(days=i)
         cells = [build_cell(d, name, res.get((d.isoformat(), name)), current, last_day) for name in SLOT_NAMES]
+        # The note popover edits the whole block a cell belongs to, like the upcoming list
+        by_user = {}
+        for c in cells:
+            if c['res']:
+                by_user.setdefault(c['res']['user_id'], []).append(
+                    {'id': c['res']['id'], 'day': d, 'slot': c['slot'], 'note': c['note']})
+        for own in by_user.values():
+            for b in group_blocks(own):
+                b['label'] = f'{fmt_day(d)} · {b["name"]}'
+                for c in cells:
+                    if c['res'] and c['res']['id'] in b['ids']:
+                        c['block'] = b
         free = sum(c['bookable'] for c in cells)
         days.append({
             'date': d,
@@ -167,7 +181,7 @@ def sidebar_info(current):
     for b in upcoming:
         b.update(wd=WEEKDAYS[b['day'].weekday()], label='heute' if b['day'] == today else fmt_day(b['day']))
 
-    return {'running': running, 'next_free': next_free, 'upcoming': upcoming[:6], 'max_note': MAX_NOTE}
+    return {'running': running, 'next_free': next_free, 'upcoming': upcoming[:6]}
 
 
 @bp.route('/')
@@ -363,9 +377,12 @@ def clean_note(text):
 @bp.route('/note', methods=['POST'])
 @login_required
 def note():
-    """Set or clear the note of a block of your household's bookings (form fields `id`, repeated, and `note`)."""
+    """Set or clear the note of a block of your household's bookings.
+
+    Form fields: `id` (repeated), `note`; `clear` (or an empty note) deletes it.
+    """
     ids = sorted(set(request.form.getlist('id', type=int)))
-    text = clean_note(request.form.get('note', ''))
+    text = None if request.form.get('clear') else clean_note(request.form.get('note', ''))
     if not ids or (text and len(text) > MAX_NOTE):
         abort(400)
     rows = open_reservations(ids, admin_ok=False)

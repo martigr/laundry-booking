@@ -298,27 +298,49 @@ def test_note_on_a_block(client, query, login):
     book(client, t, '2026-10-16', 'Abend')
     ids = [r[0] for r in query('SELECT id FROM reservations ORDER BY id')]
     page = client.get('/?week=2026-10-16').get_data(as_text=True)
-    assert '+ Notiz für die anderen' in page
+    # Own bookings: an empty badge in each cell and in the upcoming list, with a form in a popover
+    assert page.count('class="note-badge empty"') == 3
+    assert f'<div id="note-{ids[0]}" popover class="modal note-pop">' in page
+    assert f'<div id="note-list-{ids[0]}" popover class="modal note-pop">' in page
     assert 'maxlength="80"' in page
+    assert '<p class="hint">Fr 16. Okt. · Nachmittag – Abend</p>' in page  # the cell edits the whole block
 
     r = set_note(client, t, ids, '  Hole die\r\nWäsche\x00 um 13 Uhr  ')
     assert r.headers['Location'] == '/?week=2026-10-16'
     assert query('SELECT note FROM reservations ORDER BY id') == [('Hole die Wäsche um 13 Uhr',)] * 2
     page = client.get('/?week=2026-10-16').get_data(as_text=True)
     assert 'Notiz gespeichert: Fr 16. Okt. · Nachmittag, Abend' in page
-    assert '«Hole die Wäsche um 13 Uhr»' in page  # in the upcoming list
-    assert 'value="Hole die Wäsche um 13 Uhr"' in page
+    assert page.count('aria-label="Notiz: Hole die Wäsche um 13 Uhr"') == 3
+    assert '>Hole die Wäsche um 13 Uhr</textarea>' in page
+    assert 'name="clear" value="1"' in page
 
-    # Everyone sees it in the calendar and the month view
+    # Everyone else sees a badge that opens the note, without a form
     login('alice')
     page = client.get('/?week=2026-10-16').get_data(as_text=True)
-    assert page.count('<span class="s-note" title="Hole die Wäsche um 13 Uhr">') == 2
+    assert page.count('aria-label="Notiz: Hole die Wäsche um 13 Uhr"') == 2
+    assert '<h2>Notiz von Bob</h2>' in page
+    assert 'action="/note"' not in page
     assert 'Abend: Bob – Hole die Wäsche um 13 Uhr' in client.get('/month?month=2026-10').get_data(as_text=True)
 
     t = login('bob')
-    r = set_note(client, t, ids, '   ', next_='/')
+    client.post('/note', data={'id': ids, 'note': 'egal', 'clear': '1', 'csrf_token': t, 'next': '/'})
     assert query('SELECT note FROM reservations') == [(None,), (None,)]
     assert 'Notiz gelöscht: Fr 16. Okt. · Nachmittag, Abend' in client.get('/').get_data(as_text=True)
+    set_note(client, t, ids, 'x')
+    set_note(client, t, ids, '   ')  # an empty note deletes it too
+    assert query('SELECT note FROM reservations') == [(None,), (None,)]
+
+
+def test_no_note_badge_on_others_or_past_bookings_without_note(app, client, query, login):
+    t = login('bob')
+    book(client, t, '2026-10-16', 'Abend')
+    with app.app_context():
+        from laundry.db import get_db
+        with get_db() as con:
+            con.execute("INSERT INTO reservations (day, slot, user_id) VALUES ('2026-10-14', 'Abend', 2)")
+    assert client.get('/?week=2026-10-16').get_data(as_text=True).count('note-badge') == 2  # cell + list
+    login('alice')
+    assert 'note-badge' not in client.get('/?week=2026-10-16').get_data(as_text=True)
 
 
 def test_block_shows_each_different_note_once(app, client, query, login):
@@ -327,7 +349,7 @@ def test_block_shows_each_different_note_once(app, client, query, login):
     ids = [r[0] for r in query('SELECT id FROM reservations ORDER BY id')]
     set_note(client, t, ids[:2], '40°')
     set_note(client, t, ids[2:], '60°')
-    assert '«40° · 60°»' in client.get('/').get_data(as_text=True)
+    assert 'aria-label="Notiz: 40° · 60°"' in client.get('/').get_data(as_text=True)
 
 
 def test_note_rules(app, client, query, login):
@@ -368,7 +390,7 @@ def test_note_is_escaped(client, query, login):
     login('alice')
     page = client.get('/?week=2026-10-16').get_data(as_text=True)
     assert '<b>x</b>' not in page
-    assert 'title="&lt;b&gt;x&lt;/b&gt;&#34;"' in page
+    assert '<p>&lt;b&gt;x&lt;/b&gt;&#34;</p>' in page
 
 
 def test_running_card_shows_note(client, query, login):

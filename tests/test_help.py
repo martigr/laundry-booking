@@ -14,7 +14,7 @@ def test_help_page(client, login):
     assert 'Als Admin' not in html
     assert 'href="/privacy">Datenschutz</a> (Link ganz unten' in html
     assert '<a href="#notiz">Eine Notiz zur Buchung</a>' in html
-    assert '«Deine nächsten Buchungen» unter der Buchung' in html
+    assert '«Deine nächsten Buchungen» oben rechts einen kleinen Knopf' in html
 
 
 def test_help_link_in_navigation(client, login):

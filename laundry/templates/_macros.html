@@ -1,13 +1,50 @@
+{% macro note_button(pid, ids, note, label, who, editable) -%}
+{#- Badge that opens a popover (HTML popover attribute, no JavaScript): the note to read, or a form to edit it -#}
+<button type="button" class="note-badge{{ '' if note else ' empty' }}" popovertarget="{{ pid }}" title="{{ note or 'Notiz hinzufügen' }}" aria-label="{{ 'Notiz: ' ~ note if note else 'Notiz hinzufügen' }}">
+  {%- if note -%}
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+  {%- else -%}
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  {%- endif -%}
+</button>
+<div id="{{ pid }}" popover class="modal note-pop">
+  {%- if editable %}
+  <form method="post" action="{{ url_for('bookings.note') }}" class="modal-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for id in ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <h2>Notiz für die anderen</h2>
+    <p class="hint">{{ label }}{{ ' · ' ~ who if who }}</p>
+    <textarea name="note" maxlength="{{ max_note }}" rows="3" placeholder="z. B. Ich hole die Wäsche erst um 13 Uhr" aria-label="Notiz">{{ note or '' }}</textarea>
+    <div class="modal-actions">
+      {% if note %}<button type="submit" name="clear" value="1" class="btn note-clear">Löschen</button>{% endif %}
+      <button type="button" class="btn" popovertarget="{{ pid }}" popovertargetaction="hide">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+  {%- else %}
+  <div class="modal-body">
+    <h2>Notiz von {{ who }}</h2>
+    <p class="hint">{{ label }}</p>
+    <p>{{ note }}</p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" popovertarget="{{ pid }}" popovertargetaction="hide">Schliessen</button>
+    </div>
+  </div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
 {% macro slot_cell(c) -%}
 {%- set who = 'Du' if c.mine else (c.res['display_name'] if c.res else ('Vorbei' if c.state == 'past' else ('Noch nicht buchbar' if c.state == 'locked' else 'Frei'))) -%}
 {%- set classes = 'slot ' ~ c.state ~ (' past' if c.past and c.res else '') ~ (' running' if c.running and c.res else '') ~ (' cancelable' if c.cancelable else '') -%}
 {%- set inner -%}
   <span class="s-name">{{ c.slot }}</span>
   <span class="s-who">{{ who }}</span>
-  {% if c.note %}<span class="s-note" title="{{ c.note }}">{{ c.note }}</span>{% endif %}
   <span class="s-meta">{% if c.running and c.res %}Läuft gerade{% else %}<span class="t-long">{{ c.time }}</span><span class="t-short">{{ c.short }}</span>{% endif %}</span>
   {% if c.cancelable %}<span class="s-hover">Stornieren</span>{% endif %}
 {%- endset -%}
+<div class="slot-wrap">
 {%- if c.bookable -%}
 <form method="post" action="{{ url_for('bookings.book') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -20,9 +57,13 @@
 <form method="post" action="{{ url_for('bookings.cancel', rid=c.res['id']) }}"{% if not c.ours %} data-confirm-title="Fremde Buchung stornieren?" data-confirm="Die Buchung von {{ c.res['display_name'] }} ({{ c.label }}) wird storniert." data-confirm-ok="Stornieren" data-confirm-danger{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="next" value="{{ request.full_path }}">
-  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}{{ ', Notiz: ' ~ c.note if c.note }}) stornieren">{{ inner }}</button>
+  <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}) stornieren">{{ inner }}</button>
 </form>
 {%- else -%}
 <div class="{{ classes }}">{{ inner }}</div>
 {%- endif -%}
+{%- if c.note or c.note_editable %}
+{{ note_button('note-' ~ c.res['id'], c.block.ids, c.block.note, c.block.label, None if c.mine else c.res['display_name'], c.note_editable) }}
+{%- endif -%}
+</div>
 {%- endmacro %}

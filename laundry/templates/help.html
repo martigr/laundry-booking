@@ -94,12 +94,13 @@
   <section class="card" id="notiz">
     <h2>Eine Notiz zur Buchung</h2>
     <p>Mit einer kurzen Notiz sagst du den anderen, was sie wissen sollten, zum Beispiel «Ich hole die Wäsche erst
-      um 13 Uhr» oder «60°-Wäsche, Maschine danach frei». Klicke in der Liste
-      «{{ 'Eure' if g.user['household_id'] else 'Deine' }} nächsten Buchungen» unter der Buchung auf
-      <strong>+ Notiz für die anderen</strong>, schreibe sie (höchstens 80 Zeichen) und klicke auf
-      <strong>Speichern</strong>. Alle sehen sie im Kalender beim Slot. Mit <strong>Ändern</strong> passt du sie an,
-      ein leeres Feld löscht sie.</p>
-    <p class="hint">Die Notiz gilt für den ganzen Block, also für alle Slots, die dort zusammen stehen.</p>
+      um 13 Uhr» oder «60°-Wäsche, Maschine danach frei». Deine kommenden Buchungen haben im Kalender und in der Liste
+      «{{ 'Eure' if g.user['household_id'] else 'Deine' }} nächsten Buchungen» oben rechts einen kleinen Knopf
+      <strong>+</strong>. Klicke darauf, schreibe die Notiz (höchstens 80 Zeichen) und klicke auf
+      <strong>Speichern</strong>. Mit <strong>Löschen</strong> entfernst du sie wieder.</p>
+    <p>Hat eine Buchung eine Notiz, zeigt der Kalender oben rechts eine dunkle Sprechblase. Ein Klick darauf zeigt
+      die Notiz.</p>
+    <p class="hint">Die Notiz gilt für alle Slots, die du am selben Tag hintereinander gebucht hast.</p>
   </section>
 
   <section class="card" id="monat">

@@ -30,8 +30,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - One click on a free slot books it, one click on your own booking cancels it
 - "Ganzer Tag" books all free slots of a day at once
 - Adjacent bookings show up as one block in your upcoming bookings (and cancel together)
-- Short note on a booking (up to 80 characters, e.g. "Hole die Wäsche erst um 13 Uhr"), set in your upcoming
-  bookings and shown to everyone in the calendar
+- Short note on a booking (up to 80 characters, e.g. "Hole die Wäsche erst um 13 Uhr"): a small badge on the
+  slot, a click opens it (or, on your own booking, a form to write it)
 - Households: residents that an admin groups into a household see each other's bookings as their own
   and can cancel them
 - "Now in the laundry room" card, next free slot and your upcoming bookings
