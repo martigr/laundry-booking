@@ -12,6 +12,9 @@ from .slots import MONTHS, SLOT_NAMES, WEEKDAYS, WEEKDAYS_LONG, fmt_day, last_bo
 
 bp = Blueprint('bookings', __name__)
 
+MAX_NOTE = 80  # characters of a booking note
+bp.add_app_template_global(MAX_NOTE, 'max_note')  # global, so the macros in _macros.html see it
+
 
 def household_ids():
     """Ids of the current user and their housemates: their bookings count as the user's own."""
@@ -23,7 +26,7 @@ def household_ids():
 
 def load_reservations(start, end):
     rows = get_db().execute("""
-        SELECT r.id, r.day, r.slot, r.user_id, u.display_name
+        SELECT r.id, r.day, r.slot, r.user_id, r.note, u.display_name
         FROM reservations r JOIN users u ON u.id = r.user_id
         WHERE r.day BETWEEN ? AND ?
     """, (start.isoformat(), end.isoformat())).fetchall()
@@ -53,11 +56,13 @@ def build_cell(day, slot_name, res, current, last_day):
         'past': past,
         'running': start <= current < end,
         'res': res,
+        'note': res['note'] if res else None,
         'mine': mine,
         'ours': ours,
         'state': state,
         'bookable': state == 'free',
         'cancelable': bool(res) and not past and (ours or bool(g.user['is_admin'])),
+        'note_editable': ours and not past,
     }
 
 
@@ -69,6 +74,18 @@ def build_days(first, count, current):
     for i in range(count):
         d = first + timedelta(days=i)
         cells = [build_cell(d, name, res.get((d.isoformat(), name)), current, last_day) for name in SLOT_NAMES]
+        # The note popover edits the whole block a cell belongs to, like the upcoming list
+        by_user = {}
+        for c in cells:
+            if c['res']:
+                by_user.setdefault(c['res']['user_id'], []).append(
+                    {'id': c['res']['id'], 'day': d, 'slot': c['slot'], 'note': c['note']})
+        for own in by_user.values():
+            for b in group_blocks(own):
+                b['label'] = f'{fmt_day(d)} · {b["name"]}'
+                for c in cells:
+                    if c['res'] and c['res']['id'] in b['ids']:
+                        c['block'] = b
         free = sum(c['bookable'] for c in cells)
         days.append({
             'date': d,
@@ -91,7 +108,7 @@ def slot_list(names):
 def group_blocks(rows):
     """Merge reservations of consecutive slots on the same day into blocks.
 
-    `rows` need `id`, `day` (date) and `slot`, sorted by day and slot order.
+    `rows` need `id`, `day` (date) and `slot`, sorted by day and slot order, and may have a `note`.
     """
     blocks = []
     for r in rows:
@@ -99,8 +116,9 @@ def group_blocks(rows):
         if last and last['day'] == r['day'] and SLOT_NAMES.index(last['slots'][-1]) + 1 == SLOT_NAMES.index(r['slot']):
             last['slots'].append(r['slot'])
             last['ids'].append(r['id'])
+            last['notes'].append(r.get('note'))
         else:
-            blocks.append({'day': r['day'], 'slots': [r['slot']], 'ids': [r['id']]})
+            blocks.append({'day': r['day'], 'slots': [r['slot']], 'ids': [r['id']], 'notes': [r.get('note')]})
     for b in blocks:
         start, end = slot_bounds(b['day'], b['slots'][0])[0], slot_bounds(b['day'], b['slots'][-1])[1]
         if b['slots'] == SLOT_NAMES:
@@ -109,7 +127,8 @@ def group_blocks(rows):
             b['name'] = f"{b['slots'][0]} – {b['slots'][-1]}"
         else:
             b['name'] = b['slots'][0]
-        b.update(start=start, end=end, time=f'{start:%H:%M} – {end:%H:%M}')
+        b.update(start=start, end=end, time=f'{start:%H:%M} – {end:%H:%M}',
+                 note=' · '.join(dict.fromkeys(n for n in b.pop('notes') if n)))  # each different note once
     return blocks
 
 
@@ -130,10 +149,10 @@ def sidebar_info(current):
             r = res.get((d.isoformat(), name))
             if start <= current and r:
                 # The running booking plus the same user's adjacent slots that day
-                same = [{'id': x['id'], 'day': d, 'slot': n} for n in SLOT_NAMES
+                same = [{'id': x['id'], 'day': d, 'slot': n, 'note': x['note']} for n in SLOT_NAMES
                         if (x := res.get((d.isoformat(), n))) and x['user_id'] == r['user_id']]
                 block = next(b for b in group_blocks(same) if r['id'] in b['ids'])
-                running = {'res': r, 'name': block['name'], 'end': block['end'],
+                running = {'res': r, 'name': block['name'], 'end': block['end'], 'note': block['note'],
                            'mine': r['user_id'] == g.user['id'],
                            'progress': int((current - block['start']) / (block['end'] - block['start']) * 100)}
             if r is None:
@@ -143,7 +162,7 @@ def sidebar_info(current):
 
     ids = sorted(household_ids())
     rows = get_db().execute(f"""
-        SELECT r.id, r.day, r.slot, r.user_id, u.display_name
+        SELECT r.id, r.day, r.slot, r.user_id, r.note, u.display_name
         FROM reservations r JOIN users u ON u.id = r.user_id
         WHERE r.user_id IN ({", ".join("?" * len(ids))}) AND r.day >= ?
     """, (*ids, today.isoformat())).fetchall()
@@ -152,7 +171,7 @@ def sidebar_info(current):
         day = parse_day(r['day'])
         if slot_bounds(day, r['slot'])[1] > current:
             by_user.setdefault(r['user_id'], []).append(
-                {'id': r['id'], 'day': day, 'slot': r['slot'], 'who': r['display_name']})
+                {'id': r['id'], 'day': day, 'slot': r['slot'], 'who': r['display_name'], 'note': r['note']})
     upcoming = []
     for uid, own in by_user.items():  # per member, so a housemate's adjacent slot stays a separate block
         for b in group_blocks(own):
@@ -290,23 +309,34 @@ def book_day():
     return back_to_calendar()
 
 
-def cancel_reservations(ids):
-    """Cancel the given reservations: 404 if one is missing, 403 if one isn't your household's (unless admin)."""
-    con = get_db()
-    rows = con.execute(f'SELECT * FROM reservations WHERE id IN ({", ".join("?" * len(ids))})', ids).fetchall()
+def open_reservations(ids, admin_ok):
+    """The given reservations that haven't ended: 404 if one is missing, 403 if one isn't your
+    household's (admins pass when `admin_ok`)."""
+    rows = get_db().execute(f'SELECT * FROM reservations WHERE id IN ({", ".join("?" * len(ids))})', ids).fetchall()
     if len(rows) != len(ids):
         abort(404)
-    if not g.user['is_admin'] and any(r['user_id'] not in household_ids() for r in rows):
+    if not (admin_ok and g.user['is_admin']) and any(r['user_id'] not in household_ids() for r in rows):
         abort(403)
     current = slots.now()
-    rows = [r for r in rows if slot_bounds(parse_day(r['day']), r['slot'])[1] > current]
-    if not rows:
-        flash('Vergangene Buchungen können nicht storniert werden.', 'warn')
-        return
+    return [r for r in rows if slot_bounds(parse_day(r['day']), r['slot'])[1] > current]
+
+
+def summarize(rows):
+    """'Fr 16. Okt. · Nachmittag, Abend; Sa 17. Okt. · ganzer Tag'"""
     by_day = {}
     for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
         by_day.setdefault(r['day'], []).append(r['slot'])
-    summary = '; '.join(f'{fmt_day(parse_day(d))} · {slot_list(names)}' for d, names in by_day.items())
+    return '; '.join(f'{fmt_day(parse_day(d))} · {slot_list(names)}' for d, names in by_day.items())
+
+
+def cancel_reservations(ids):
+    """Cancel the given reservations: 404 if one is missing, 403 if one isn't your household's (unless admin)."""
+    con = get_db()
+    rows = open_reservations(ids, admin_ok=True)
+    if not rows:
+        flash('Vergangene Buchungen können nicht storniert werden.', 'warn')
+        return
+    summary = summarize(rows)
     owners = sorted({r['user_id'] for r in rows} - {g.user['id']})
     with con:
         if owners:  # a housemate's booking, or an admin cancelling someone else's
@@ -336,4 +366,32 @@ def cancel_many():
     if not ids:
         abort(400)
     cancel_reservations(ids)
+    return back_to_calendar()
+
+
+def clean_note(text):
+    """One line without control characters; None when empty."""
+    return ' '.join(''.join(c if c.isprintable() else ' ' for c in text).split()) or None
+
+
+@bp.route('/note', methods=['POST'])
+@login_required
+def note():
+    """Set or clear the note of a block of your household's bookings.
+
+    Form fields: `id` (repeated), `note`; `clear` (or an empty note) deletes it.
+    """
+    ids = sorted(set(request.form.getlist('id', type=int)))
+    text = None if request.form.get('clear') else clean_note(request.form.get('note', ''))
+    if not ids or (text and len(text) > MAX_NOTE):
+        abort(400)
+    rows = open_reservations(ids, admin_ok=False)
+    if not rows:
+        flash('Vergangene Buchungen können nicht mehr geändert werden.', 'warn')
+        return back_to_calendar()
+    summary = summarize(rows)
+    with get_db() as con:
+        con.executemany('UPDATE reservations SET note = ? WHERE id = ?', [(text, r['id']) for r in rows])
+        audit.record(con, 'note', f'{summary}: «{text}»' if text else f'{summary}: gelöscht')
+    flash(f'Notiz gespeichert: {summary}' if text else f'Notiz gelöscht: {summary}', 'ok')
     return back_to_calendar()

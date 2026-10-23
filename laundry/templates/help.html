@@ -24,6 +24,7 @@
         <li><a href="#buchen">Einen Slot buchen</a></li>
         <li><a href="#ganzer-tag">Einen ganzen Tag buchen</a></li>
         <li><a href="#stornieren">Eine Buchung stornieren</a></li>
+        <li><a href="#notiz">Eine Notiz zur Buchung</a></li>
         <li><a href="#monat">Monatsübersicht</a></li>
         <li><a href="#handy">Auf dem Handy</a></li>
         <li><a href="#haushalt">Haushalt</a></li>
@@ -88,6 +89,22 @@
     {% if g.user['is_admin'] %}
     <p class="hint">Als Admin kannst du auch fremde Buchungen stornieren. Dafür erscheint zuerst eine Rückfrage.</p>
     {% endif %}
+  </section>
+
+  <section class="card" id="notiz">
+    <h2>Eine Notiz zur Buchung</h2>
+    <p>Mit einer kurzen Notiz sagst du den anderen, was sie wissen sollten, zum Beispiel «Ich hole die Wäsche erst
+      um 13 Uhr» oder «60°-Wäsche, Maschine danach frei». Deine kommenden Buchungen haben im Kalender und in der Liste
+      «{{ 'Eure' if g.user['household_id'] else 'Deine' }} nächsten Buchungen» oben rechts einen kleinen Knopf
+      <strong>+</strong>. Klicke darauf, schreibe die Notiz (höchstens 80 Zeichen) und klicke auf
+      <strong>Speichern</strong>. Mit <strong>Löschen</strong> entfernst du sie wieder.</p>
+    <p>Hat eine Buchung eine Notiz, zeigt der Kalender oben rechts eine dunkle Sprechblase. Ein Klick darauf zeigt
+      die Notiz.</p>
+    <div class="help-pair">
+      {{ shot('note-badge', 'Kalender mit Knopf «+» an der eigenen Buchung und Sprechblase an einer Buchung mit Notiz', 387, 416) }}
+      {{ shot('note-edit', 'Fenster «Notiz für die anderen» mit Textfeld und Knopf «Speichern»', 420, 262) }}
+    </div>
+    <p class="hint">Die Notiz gilt für alle Slots, die du am selben Tag hintereinander gebucht hast.</p>
   </section>
 
   <section class="card" id="monat">

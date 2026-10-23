@@ -123,6 +123,10 @@ AUDIT_ENTRIES = [  # oldest first: time, username, action, detail, address
     ('2026-10-22T11:02:59', None, 'login_failed', 'unbekannter Benutzername', '203.0.113.7'),
     ('2026-10-22T13:47:18', 'marco', 'book', 'Fr 23. Okt. · Nachmittag – Abend', '192.168.1.40'),
 ]
+README_NOTES = {  # (day of October 2026, slot): note
+    (16, 'Abend'): '60°-Wäsche, Maschine danach frei',
+    (17, 'Vormittag'): 'Ich hole die Wäsche erst um 13 Uhr',
+}
 FAILED_LOGIN_NAMES = iter(['bob', 'admin', 'root'])  # what was typed at the failed logins above
 
 
@@ -141,8 +145,8 @@ def readme_data(app):
         for day, owners in README_BOOKINGS.items():
             for slot, owner in zip(slots.SLOT_NAMES, owners, strict=True):
                 if owner:
-                    con.execute('INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?)',
-                                (date(2026, 10, day).isoformat(), slot, ids[owner]))
+                    con.execute('INSERT INTO reservations (day, slot, user_id, note) VALUES (?, ?, ?, ?)',
+                                (date(2026, 10, day).isoformat(), slot, ids[owner], README_NOTES.get((day, slot))))
     readme_data.ids = ids
 
 
@@ -189,9 +193,17 @@ HELP_DIR = ROOT / 'laundry' / 'static' / 'help'
 HELP_NOW = datetime(2026, 10, 22, 14, 20)  # a Thursday afternoon: "running" slot and today are visible
 
 
+HELP_NOTES = {  # (day, slot): note, on top of the demo bookings
+    ('2026-10-24', 'Nachmittag'): '60°-Wäsche, Maschine danach frei',  # Alice's
+}
+
+
 def help_data(app):
     slots.now = lambda: HELP_NOW
     app.test_cli_runner().invoke(seed_demo_command)  # bob / password456, not in a household
+    with get_db() as con:
+        con.executemany('UPDATE reservations SET note = ? WHERE day = ? AND slot = ?',
+                        [(note, day, slot) for (day, slot), note in HELP_NOTES.items()])
 
 
 def help_shots(browser, app):
@@ -234,6 +246,18 @@ def help_shots(browser, app):
     hi_res.mouse.move(0, 0)
     mark(hi_res, '.upcoming .btn')
     save(hi_res.locator('.split-side .card').nth(1).screenshot(), HELP_DIR / 'cancel-list.png')
+    unmark(hi_res)
+
+    # Notes: the badges on Saturday (Alice's note, "+" on bob's own booking), then bob writing one
+    saturday = days.nth(5)
+    saturday.locator('.note-badge').evaluate_all("els => els.forEach(e => e.classList.add('hl'))")
+    save(hi_res.screenshot(clip=union(days.nth(4).bounding_box(), days.nth(6).bounding_box(), pad=8)),
+         HELP_DIR / 'note-badge.png')
+    unmark(hi_res)
+    saturday.locator('.note-badge.empty').click()
+    hi_res.fill('.note-pop:popover-open textarea', 'Ich hole die Wäsche erst um 13 Uhr')
+    hi_res.mouse.move(0, 0)
+    save(hi_res.locator('.note-pop:popover-open').screenshot(), HELP_DIR / 'note-edit.png')
     hi_res.close()
 
     page.goto(BASE + '/month?month=2026-10')

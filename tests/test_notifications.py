@@ -213,6 +213,10 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     con.execute("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
                    password TEXT NOT NULL, display_name TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0)""")
     con.execute("INSERT INTO users (username, password, display_name) VALUES ('bob', 'x', 'Bob')")
+    con.execute("""CREATE TABLE reservations (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL,
+                   slot TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   UNIQUE (day, slot))""")
+    con.execute("INSERT INTO reservations (day, slot, user_id) VALUES ('2026-10-16', 'Abend', 1)")
     con.commit()
     con.close()
 
@@ -221,6 +225,7 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     con = sqlite3.connect(path)
     assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version, calendar_token, '
                        'household_id FROM users').fetchall() == [('bob', None, 0, 0, 0, None, None)]
+    assert con.execute('SELECT day, note FROM reservations').fetchall() == [('2026-10-16', None)]
     assert con.execute('SELECT COUNT(*) FROM households').fetchone() == (0,)
     assert con.execute("SELECT 1 FROM sqlite_master WHERE name = 'users_calendar_token'").fetchone() == (1,)
     assert con.execute('SELECT COUNT(*) FROM login_failures').fetchone() == (0,)

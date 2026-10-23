@@ -68,14 +68,14 @@ def build_feed(user):
     host = urlsplit(current_app.config['BASE_URL']).hostname or 'localhost'
     # household_id = NULL matches nothing, so users without a household get only their own
     rows = get_db().execute("""
-        SELECT r.id, r.day, r.slot, r.user_id, u.display_name
+        SELECT r.id, r.day, r.slot, r.user_id, r.note, u.display_name
         FROM reservations r JOIN users u ON u.id = r.user_id
         WHERE (r.user_id = ? OR u.household_id = ?) AND r.day >= ?
     """, (user['id'], user['household_id'], (current.date() - KEEP_PAST).isoformat())).fetchall()
     by_user = {}
     for r in sorted(rows, key=lambda r: (r['day'], SLOT_NAMES.index(r['slot']))):
         by_user.setdefault(r['user_id'], []).append(
-            {'id': r['id'], 'day': parse_day(r['day']), 'slot': r['slot'], 'who': r['display_name']})
+            {'id': r['id'], 'day': parse_day(r['day']), 'slot': r['slot'], 'who': r['display_name'], 'note': r['note']})
     blocks = []
     for own in by_user.values():  # per member, so adjacent slots of two members stay two events
         for b in group_blocks(own):
@@ -94,7 +94,9 @@ def build_feed(user):
         f'REFRESH-INTERVAL;VALUE=DURATION:{REFRESH}',
         f'X-PUBLISHED-TTL:{REFRESH}',
     ]
+    app_line = 'Gebucht in der Waschküche-App: ' + link('/')
     for b in blocks:
+        description = f'Notiz: {b["note"]}\n{app_line}' if b['note'] else app_line
         # Adjacent slots are one event; its UID changes when the block does, and calendar apps
         # replace a subscribed calendar as a whole, so the old event simply disappears
         lines += [
@@ -104,7 +106,7 @@ def build_feed(user):
             f'DTSTART:{utc(b["start"], tz)}',
             f'DTEND:{utc(b["end"], tz)}',
             f'SUMMARY:{escape(b["summary"])}',
-            f'DESCRIPTION:{escape("Gebucht in der Waschküche-App: " + link("/"))}',
+            f'DESCRIPTION:{escape(description)}',
             'TRANSP:OPAQUE',
             'END:VEVENT',
         ]

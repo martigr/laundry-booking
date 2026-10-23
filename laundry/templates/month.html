@@ -36,7 +36,7 @@
     <span class="num">{{ d.date.day }}</span>
     <span class="pills">
       {% for c in d.cells %}
-      <span class="pill {{ c.state }}" title="{{ c.slot }}: {{ 'Du' if c.mine else (c.res['display_name'] if c.res else 'frei') }}">{{ 'Du' if c.mine else (c.res['display_name'] if c.res else c.slot) }}</span>
+      <span class="pill {{ c.state }}" title="{{ c.slot }}: {{ 'Du' if c.mine else (c.res['display_name'] if c.res else 'frei') }}{{ ' – ' ~ c.note if c.note }}">{{ 'Du' if c.mine else (c.res['display_name'] if c.res else c.slot) }}</span>
       {% endfor %}
     </span>
   </a>

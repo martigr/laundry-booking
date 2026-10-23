@@ -13,6 +13,8 @@ def test_help_page(client, login):
     assert 'Auf der Anmeldeseite unter «Passwort vergessen?»' in html  # mail is configured in the tests
     assert 'Als Admin' not in html
     assert 'href="/privacy">Datenschutz</a> (Link ganz unten' in html
+    assert '<a href="#notiz">Eine Notiz zur Buchung</a>' in html
+    assert '«Deine nächsten Buchungen» oben rechts einen kleinen Knopf' in html
 
 
 def test_help_link_in_navigation(client, login):
@@ -23,7 +25,7 @@ def test_help_link_in_navigation(client, login):
 def test_help_screenshots_exist(client, login):
     login('bob')
     images = re.findall(r'<img src="([^"]+)"', client.get('/help').get_data(as_text=True))
-    assert len(images) == 7
+    assert len(images) == 9
     for src in images:
         r = client.get(src)
         assert r.status_code == 200 and r.mimetype == 'image/png'

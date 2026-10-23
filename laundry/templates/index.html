@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_macros.html' import slot_cell %}
+{% from '_macros.html' import note_button, slot_cell %}
 {% block title %}Kalender – Waschküche{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -61,6 +61,7 @@
       {% if running %}
       <div class="who">{{ 'Du' if running.mine else running.res['display_name'] }}</div>
       <div class="meta">{{ running.name }} · bis {{ running.end.strftime('%H:%M') }}</div>
+      {% if running.note %}<div class="note">«{{ running.note }}»</div>{% endif %}
       <div class="bar"><div style="width: {{ running.progress }}%"></div></div>
       {% else %}
       <div class="who">Niemand gebucht</div>
@@ -76,7 +77,10 @@
       <ul class="upcoming">
         {% for u in upcoming %}
         <li>
-          <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
+          <div class="slot-wrap">
+            <div class="datebadge"><span>{{ u.wd }}</span><span>{{ u.day.day }}</span></div>
+            {{ note_button('note-list-' ~ u.ids[0], u.ids, u.note, u.label ~ ' · ' ~ u.name, u.who, True) }}
+          </div>
           <div class="what"><strong>{{ u.label }}{% if u.who %} · {{ u.who }}{% endif %}</strong><span>{{ u.name }} · {{ u.time }}</span></div>
           <form method="post" action="{{ url_for('bookings.cancel_many') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

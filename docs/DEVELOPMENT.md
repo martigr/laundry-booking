@@ -14,8 +14,9 @@ served. Admins manage users and the booking horizon and see an audit log.
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only the confirmation dialog in `static/confirm.js`,
-  the live password-repeat check in `static/profile.js` and the service worker of the home screen app);
-  no inline scripts, the CSP forbids them
+  the live password-repeat check in `static/profile.js` and the service worker of the home screen app;
+  the booking note popover uses the HTML `popover` attribute, no script); no inline scripts, the CSP
+  forbids them
 - **UI language:** German. Code, comments, commit messages and docs: English.
 
 ## Project layout
@@ -33,7 +34,7 @@ laundry/                  # the application package
 ├── security.py           # security headers (CSP etc.), /.well-known/security.txt
 ├── privacy.py            # public privacy notice /privacy
 ├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
-├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
+├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel, booking notes
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
 ├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
 ├── guide.py              # bp "help": the help page (how to book and cancel, with screenshots)
@@ -49,7 +50,7 @@ laundry/                  # the application package
 ├── static/help/*.png     # screenshots of the help page (scripts/screenshots.py)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
-    ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
+    ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static); note_button(): note badge + popover
     ├── _logo.html        # inline SVG logo
     ├── index.html        # week view + side cards
     ├── month.html        # month overview (links into week view)
@@ -136,8 +137,8 @@ id            INTEGER PK                id        INTEGER PK
 username      TEXT UNIQUE (lowercase)   day       TEXT  ISO date 'YYYY-MM-DD'
 password      TEXT  werkzeug hash       slot      TEXT  one of SLOTS names
 display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE CASCADE
-is_admin      INTEGER 0/1               UNIQUE (day, slot)
-email         TEXT  optional
+is_admin      INTEGER 0/1               note      TEXT  shown to everyone, max. 80 chars, NULL = none
+email         TEXT  optional              UNIQUE (day, slot)
 email_verified INTEGER 0/1  mails only go out when 1
 reminder_minutes INTEGER 0 = off
 notify_freed  INTEGER 0/1
@@ -233,6 +234,7 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner, housemate or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner, housemate or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
+| `/note` | POST | `bookings.note` | owner or housemate | `id` (repeated), `note`, `next`; sets the note of a block (empty clears it), skips ended slots; 400 without ids or above 80 characters |
 | `/help` | GET | `help.index` | user | Help page: calendar, booking, cancelling, month view, phone, households, profile |
 | `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users, households and settings |
@@ -269,6 +271,17 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
 - Users cancel their own bookings and those of their housemates; admins can cancel any.
   `cancel_reservations()` is shared by `/cancel/<id>` and `/cancel`: 404 if any id is missing, 403 if
   any booking isn't your household's.
+- **Notes:** `note()` sets the same note on every booking of a block (`MAX_NOTE` = 80 characters after
+  `clean_note()` joined it into one line; empty = NULL). Owner or housemate only, admins can't edit others'
+  notes (they can cancel the booking). Ended slots are skipped, like when cancelling; same 404/403 rules
+  (`open_reservations()`); `clear=1` deletes the note like an empty one. `group_blocks()` gives a block's `note`
+  (each different note once, joined with " · "), and `build_days()` sets `block` on every booked cell.
+  Display: the `note_button()` macro in `_macros.html` renders a small badge in the corner of the cell (dark
+  speech bubble = note, dashed "+" = your own upcoming booking without one) and a popover (`popover` attribute,
+  `popovertarget`, styled like `.modal`; no JavaScript): the note for everyone else, a form for the household.
+  The form edits the cell's whole block. The same badge sits on the date badge in the upcoming list. Cells keep
+  their size; the note text itself only appears in the popover, the month pill's tooltip and the
+  "Jetzt in der Waschküche" card.
 - **Households:** `bookings.household_ids()` returns the current user's id plus those of everyone with
   the same `household_id` (cached on `g`). A booking by any of them counts as the user's own:
   `build_cell()` sets `ours` (state `mine`, blue, cancelable, no "Fremde Buchung" dialog) next to
@@ -315,7 +328,8 @@ Calendar via its web UI). Other households' bookings are never in it.
   touching `SECRET_KEY`. It does not change with the password: the feed only shows bookings, and
   re-subscribing every device after each password change would be a nuisance.
 - Content: bookings from 4 weeks ago (`KEEP_PAST`) on, adjacent slots merged with
-  `bookings.group_blocks()` into one event. The `UID` is built from the reservation ids, so it
+  `bookings.group_blocks()` into one event; a booking note goes into `DESCRIPTION` ("Notiz: …").
+  The `UID` is built from the reservation ids, so it
   changes when a block grows or shrinks; subscribed calendars are replaced as a whole on every
   refresh, so the old event disappears. Times are converted from the building's `TIMEZONE` to UTC
   (`…Z`), which avoids a `VTIMEZONE` block. `REFRESH-INTERVAL`/`X-PUBLISHED-TTL` suggest one
@@ -333,7 +347,7 @@ nobody is logged in yet (login, mail links) and `user=False, username=...` for f
 `action` must be a key of `audit.ACTIONS`, which maps it to the German label and the filter group.
 
 Logged: logins, failed and blocked logins, logouts, password reset by mail link; booking and
-cancelling (with the owner's name when it wasn't one's own booking); profile changes (display name,
+cancelling (with the owner's name when it wasn't one's own booking), booking notes (with the text); profile changes (display name,
 notification settings, confirmed address, unsubscribe, calendar link, password); admin actions
 (users, households, settings) and `create-user`/`make-admin` on the command line. Rejected requests
 (400/403/404, invalid input) are not logged, except logins.

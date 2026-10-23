@@ -94,6 +94,7 @@ ADDED_COLUMNS = [
     ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'calendar_token', 'TEXT'),  # secret of the calendar feed URL, NULL = no feed
     ('users', 'household_id', 'INTEGER REFERENCES households(id) ON DELETE SET NULL'),  # NULL = on their own
+    ('reservations', 'note', 'TEXT'),  # short note for the others, NULL = none
 ]
 
 # audit_days: how long audit log entries are kept
