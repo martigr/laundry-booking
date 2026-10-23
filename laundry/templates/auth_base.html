@@ -20,6 +20,8 @@
       {% endfor %}
       {% endwith %}
       {% block form %}{% endblock %}
+      {# Logged-out pages: privacy link only, no version #}
+      <footer class="login-footer"><a href="{{ url_for('privacy') }}">Datenschutz</a></footer>
     </div>
   </section>
 </div>
