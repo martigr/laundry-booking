@@ -186,7 +186,9 @@ ip        TEXT     request.remote_addr, NULL for the CLI
   `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock, so parallel workers run
   it one after another. It creates the schema (`CREATE TABLE IF NOT EXISTS`) and the first
   admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on an empty database. WAL mode is enabled
-  once and persists in the file.
+  once and persists in the file. `enable_wal()` retries for up to 30 s: SQLite doesn't wait for a lock
+  when switching the journal mode, so on a new database the second worker would otherwise fail
+  with "database is locked" while the first is still in `init_db()`.
 - Migrations: columns added after the first release are listed in `db.ADDED_COLUMNS`;
   `init_db()` adds each one that is missing (`ALTER TABLE ... ADD COLUMN`). New tables just go
   into `SCHEMA` (`CREATE TABLE IF NOT EXISTS`). Other changes need their own idempotent step in
