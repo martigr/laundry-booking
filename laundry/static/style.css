@@ -239,6 +239,12 @@ td.actions form { display: inline-block; margin: 2px 0 2px 12px; white-space: no
 .login-form h2 { font-size: 28px; font-weight: 800; }
 .login-footer { font-size: 12px; color: var(--faint); }
 
+/* Offline page (shown by the service worker) */
+.offline { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.offline-card { max-width: 420px; align-items: flex-start; gap: 16px; padding: 28px; }
+.offline-card h1 { font-size: 24px; font-weight: 800; }
+.offline-card p { margin: 0; color: var(--ink-2); line-height: 1.55; }
+
 /* --- Phone ------------------------------------------------------------- */
 @media (max-width: 860px) {
   .topbar-inner { padding: 10px 16px; }
