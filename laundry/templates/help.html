@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}Hilfe – Waschküche{% endblock %}
+{% macro shot(name, alt, width, height) -%}
+{%- set src = url_for('static', filename='help/' ~ name ~ '.png') -%}
+<figure class="help-shot"><a href="{{ src }}" title="Gross anzeigen"><img src="{{ src }}" alt="{{ alt }}" width="{{ width }}" height="{{ height }}" loading="lazy"></a></figure>
+{%- endmacro %}
+{% block content %}
+<div class="help narrow">
+  <div class="page-head">
+    <div>
+      <div class="kicker">So funktioniert die Waschküche</div>
+      <h1>Hilfe</h1>
+    </div>
+  </div>
+
+  <div class="card">
+    <p>Jeder Tag hat drei Slots:
+      {% for name, time in slots %}{% if loop.last %} und {% elif not loop.first %}, {% endif %}<strong>{{ name }}</strong> ({{ time }}){% endfor %}.
+      Wer zuerst bucht, bekommt den Slot. Du kannst bis {{ horizon_weeks }} {{ 'Woche' if horizon_weeks == 1 else 'Wochen' }} im Voraus buchen.
+      Passt etwas nicht, sprecht euch direkt ab.</p>
+    <nav aria-label="Inhalt">
+      <ol class="help-toc">
+        <li><a href="#kalender">Der Kalender</a></li>
+        <li><a href="#buchen">Einen Slot buchen</a></li>
+        <li><a href="#ganzer-tag">Einen ganzen Tag buchen</a></li>
+        <li><a href="#stornieren">Eine Buchung stornieren</a></li>
+        <li><a href="#monat">Monatsübersicht</a></li>
+        <li><a href="#handy">Auf dem Handy</a></li>
+        <li><a href="#haushalt">Haushalt</a></li>
+        <li><a href="#profil">Profil, Benachrichtigungen und Passwort</a></li>
+      </ol>
+    </nav>
+  </div>
+
+  <section class="card" id="kalender">
+    <h2>Der Kalender</h2>
+    <p>Unter <a href="{{ url_for('bookings.index') }}">Kalender</a> siehst du die aktuelle Woche. Mit den Pfeilen oben rechts
+      blätterst du zur vorherigen oder nächsten Woche, <strong>Heute</strong> bringt dich zurück.</p>
+    {{ shot('week', 'Wochenkalender mit freien, eigenen und belegten Slots', 1248, 482) }}
+    <ul class="help-legend">
+      <li><span class="swatch free"></span><span><strong>Gestrichelt:</strong> frei, du kannst ihn buchen.</span></li>
+      <li><span class="swatch mine"></span><span><strong>Blau:</strong> deine Buchung{{ ' oder die deines Haushalts' if g.user['household_id'] }}.</span></li>
+      <li><span class="swatch taken"></span><span><strong>Grau:</strong> von jemand anderem gebucht.</span></li>
+      <li><span class="swatch faded"></span><span><strong>Blass:</strong> vorbei oder noch nicht buchbar (zu weit in der Zukunft).</span></li>
+    </ul>
+    <p>Der heutige Tag ist orange hervorgehoben, ein Slot, der gerade läuft, hat einen orangen Rahmen.
+      Rechts (auf dem Handy unten) siehst du, wer gerade wäscht, den nächsten freien Slot und
+      {{ 'eure' if g.user['household_id'] else 'deine' }} nächsten Buchungen.</p>
+  </section>
+
+  <section class="card" id="buchen">
+    <h2>Einen Slot buchen</h2>
+    <ol class="help-steps">
+      <li>Wähle die Woche mit den Pfeilen.</li>
+      <li>Klicke auf einen freien, gestrichelten Slot. Eine Rückfrage gibt es nicht.</li>
+      <li>Fertig: Der Slot wird blau und oben erscheint «Gebucht: …».</li>
+    </ol>
+    {{ shot('book', 'Meldung «Gebucht» und der neu gebuchte, blaue Slot', 782, 515) }}
+    <p class="hint">War jemand schneller, erscheint «… ist leider schon vergeben». Ein Slot, der schon läuft,
+      kann noch gebucht werden, solange er frei ist.</p>
+  </section>
+
+  <section class="card" id="ganzer-tag">
+    <h2>Einen ganzen Tag buchen</h2>
+    <p>Unter jedem Tag mit mindestens zwei freien Slots steht der Knopf <strong>Ganzer Tag</strong>. Er bucht alle
+      Slots des Tages auf einmal. Ist schon ein Slot vergeben, heisst er <strong>Alle freien</strong>: Du bekommst dann
+      die übrigen Slots, die anderen Buchungen bleiben bestehen.</p>
+    {{ shot('book-day', 'Knöpfe «Ganzer Tag» und «Alle freien» unter den Tagen', 923, 446) }}
+  </section>
+
+  <section class="card" id="stornieren">
+    <h2>Eine Buchung stornieren</h2>
+    <p>Es gibt zwei Wege:</p>
+    <ol class="help-steps">
+      <li><strong>Im Kalender:</strong> Klicke auf deine blaue Buchung. Fährst du mit der Maus darüber, steht dort
+        «Stornieren». Die Buchung wird sofort storniert.</li>
+      <li><strong>In der Liste «{{ 'Eure' if g.user['household_id'] else 'Deine' }} nächsten Buchungen»:</strong>
+        Klicke auf <strong>Stornieren</strong>. Mehrere Slots hintereinander am selben Tag stehen dort als ein Block
+        (z.&nbsp;B. «Nachmittag – Abend») und werden zusammen storniert.</li>
+    </ol>
+    <div class="help-pair">
+      {{ shot('cancel-slot', 'Eigene Buchung im Kalender mit dem Hinweis «Stornieren»', 387, 416) }}
+      {{ shot('cancel-list', 'Liste der nächsten Buchungen mit den Knöpfen «Stornieren»', 301, 335) }}
+    </div>
+    <p class="hint">Aus Versehen storniert? Buche den Slot einfach nochmals, solange er frei ist.
+      Vorbei ist vorbei: Slots, die schon zu Ende sind, lassen sich nicht mehr stornieren.
+      {% if mail_enabled %}Wer es im Profil eingeschaltet hat, bekommt eine Mail, wenn in den nächsten 7 Tagen ein Slot frei wird.{% endif %}</p>
+    {% if g.user['is_admin'] %}
+    <p class="hint">Als Admin kannst du auch fremde Buchungen stornieren. Dafür erscheint zuerst eine Rückfrage.</p>
+    {% endif %}
+  </section>
+
+  <section class="card" id="monat">
+    <h2>Monatsübersicht</h2>
+    <p>Mit <strong>Woche / Monat</strong> oben rechts wechselst du zur <a href="{{ url_for('bookings.month') }}">Monatsübersicht</a>.
+      Sie zeigt pro Tag die drei Slots in den Farben von oben. Gebucht wird in der Woche: Klicke auf einen Tag und
+      du landest in seiner Woche.</p>
+    {{ shot('month', 'Monatsübersicht mit den Slots jedes Tages', 1248, 791) }}
+  </section>
+
+  <section class="card" id="handy">
+    <h2>Auf dem Handy</h2>
+    <div class="help-phone">
+      {{ shot('phone', 'Wochenkalender auf dem Handy', 390, 760) }}
+      <div>
+        <p>Auf dem Handy steht jeder Tag in einer Zeile, die drei Slots nebeneinander. Gebucht und storniert wird
+          genau gleich: Tippe auf einen freien Slot, um ihn zu buchen, und auf deine blaue Buchung, um sie zu stornieren.</p>
+        <p>Tipp: Speichere die Seite auf dem Home-Bildschirm (im Browser unter «Teilen» bzw. im Menü), dann ist sie
+          mit einem Tipp offen. Mit «Angemeldet bleiben» beim Anmelden musst du dich 30 Tage lang nicht neu anmelden.</p>
+        <p>Abmelden kannst du dich auf kleinen Bildschirmen im <a href="{{ url_for('profile.index') }}">Profil</a>
+          (Kreis mit deinem Anfangsbuchstaben oben rechts).</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="haushalt">
+    <h2>Haushalt</h2>
+    <p>Wohnt ihr zu mehreren in einer Wohnung und jede Person hat ein eigenes Login, kann ein Admin euch zu einem
+      Haushalt zusammenfassen. Dann sind die Buchungen deiner Mitbewohner auch für dich blau (mit ihrem Namen),
+      erscheinen in «Eure nächsten Buchungen» und du kannst sie stornieren.</p>
+  </section>
+
+  <section class="card" id="profil">
+    <h2>Profil, Benachrichtigungen und Passwort</h2>
+    <p>Im <a href="{{ url_for('profile.index') }}">Profil</a> (Klick auf deinen Namen oben rechts) kannst du</p>
+    <ul class="help-list">
+      <li>den <strong>Anzeigenamen</strong> ändern, unter dem dich die anderen im Kalender sehen,</li>
+      <li><strong>Mails</strong> einschalten: eine Erinnerung vor deinen Buchungen und eine Nachricht, wenn ein Slot frei wird
+        (deine Adresse musst du zuerst über den Link in der Bestätigungsmail bestätigen),</li>
+      <li>deine Buchungen im <strong>Kalender deines Handys</strong> abonnieren,</li>
+      <li>dein <strong>Passwort</strong> ändern.</li>
+    </ul>
+    {% if mail_enabled %}
+    <p class="hint">Passwort vergessen? Auf der Anmeldeseite unter «Passwort vergessen?» bekommst du einen Link an deine
+      bestätigte Mail-Adresse. Ohne bestätigte Adresse setzt dir ein Admin ein neues Passwort.</p>
+    {% else %}
+    <p class="hint">Passwort vergessen? Ein Admin setzt dir ein neues Passwort.</p>
+    {% endif %}
+    <p class="hint">Welche Daten die App speichert, wer sie sieht und wie lange sie aufbewahrt werden, steht unter
+      <a href="{{ url_for('privacy') }}">Datenschutz</a> (Link ganz unten auf jeder Seite).</p>
+  </section>
+</div>
+{% endblock %}

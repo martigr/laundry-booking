@@ -20,6 +20,7 @@
       {% if g.user['is_admin'] %}
       <a href="{{ url_for('admin.index') }}" class="{{ 'active' if request.endpoint in ('admin.index', 'admin.audit_log') }}">Verwaltung</a>
       {% endif %}
+      <a href="{{ url_for('help.index') }}" class="{{ 'active' if request.endpoint == 'help.index' }}">Hilfe</a>
     </nav>
     <div class="userbox">
       <a class="user-pill" href="{{ url_for('profile.index') }}" title="Profil">

@@ -17,7 +17,7 @@ def test_login_and_logout(client, csrf):
 
 
 def test_pages_require_login(client):
-    for url in ['/', '/month', '/profile', '/admin']:
+    for url in ['/', '/month', '/profile', '/admin', '/help']:
         assert client.get(url).headers['Location'].endswith('/login')
 
 

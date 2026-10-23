@@ -35,11 +35,13 @@ laundry/                  # the application package
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
 ├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
+├── guide.py              # bp "help": the help page (how to book and cancel, with screenshots)
 ├── admin.py              # bp "admin": users, households, settings, audit log page
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
 ├── static/profile.js     # live "passwords don't match" hint on the profile page
+├── static/help/*.png     # screenshots of the help page (scripts/screenshots.py)
 └── templates/
     ├── base.html         # layout: header, nav, flash messages, confirmation <dialog>
     ├── _macros.html      # slot_cell(): renders one slot (book / cancel / static)
@@ -50,6 +52,7 @@ laundry/                  # the application package
     ├── profile.html      # display name, mail notifications, password
     ├── admin.html
     ├── audit.html        # audit log table with filter and paging
+    ├── help.html         # help page for residents
     ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
     ├── privacy.html      # privacy notice; own logged-out layout, normal layout when logged in
     ├── forgot_password.html, reset_password.html, unsubscribe.html, confirm_email.html
@@ -60,6 +63,7 @@ tests/
 ├── test_admin.py         # admin area
 ├── test_audit.py         # audit log entries, page, rotation; version in the footer
 ├── test_cli.py           # CLI commands, first-admin bootstrap
+├── test_help.py          # help page: content, settings, screenshots exist
 ├── test_privacy.py       # privacy page with and without login, contact, footer links
 ├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
@@ -68,6 +72,7 @@ docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
 docker-compose.yml        # web + notifier container, settings from .env (.env.example)
 SECURITY.md               # how to report vulnerabilities
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
+scripts/screenshots.py        # retakes the README and help page screenshots (needs Playwright)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
@@ -181,7 +186,9 @@ ip        TEXT     request.remote_addr, NULL for the CLI
   `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock, so parallel workers run
   it one after another. It creates the schema (`CREATE TABLE IF NOT EXISTS`) and the first
   admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on an empty database. WAL mode is enabled
-  once and persists in the file.
+  once and persists in the file. `enable_wal()` retries for up to 30 s: SQLite doesn't wait for a lock
+  when switching the journal mode, so on a new database the second worker would otherwise fail
+  with "database is locked" while the first is still in `init_db()`.
 - Migrations: columns added after the first release are listed in `db.ADDED_COLUMNS`;
   `init_db()` adds each one that is missing (`ALTER TABLE ... ADD COLUMN`). New tables just go
   into `SCHEMA` (`CREATE TABLE IF NOT EXISTS`). Other changes need their own idempotent step in
@@ -217,6 +224,7 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/book-day` | POST | `bookings.book_day` | user | `day`, `next`; books all free slots of the day that haven't ended |
 | `/cancel/<id>` | POST | `bookings.cancel` | owner, housemate or admin | Only before the slot has ended |
 | `/cancel` | POST | `bookings.cancel_many` | owner, housemate or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
+| `/help` | GET | `help.index` | user | Help page: calendar, booking, cancelling, month view, phone, households, profile |
 | `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users, households and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
@@ -434,9 +442,21 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   `data-confirm-ok` (button text) and `data-confirm-danger` (red button). `confirm.js` shows
   the `<dialog>` from `base.html`; without JavaScript the form submits directly, so the
   permission check belongs in the view as always. Never use `window.confirm()` directly.
-- The README screenshots live in `docs/screenshots/` (desktop 1280 px wide, phone 390 px
-  at 2x). Retake them when the UI changes visibly, with demo data and a daytime clock so
-  the "running" slot is visible.
+- Screenshots are taken by `scripts/screenshots.py`, each set on its own temporary database with
+  fixed data and a fixed clock (Thursday afternoon, so today and a running slot are visible):
+  - `readme`: `docs/screenshots/` for the README and the project page (desktop 1280 px wide, phone
+    390 px at 2x; households, five users, a week of audit entries). The Pages workflow copies them.
+  - `help`: `static/help/` for the help page (demo data, logged in as bob, highlights in orange).
+
+  Retake them when the UI changes visibly: `python scripts/screenshots.py` (both sets) or
+  `python scripts/screenshots.py help`. It needs Playwright, which is not in `requirements-dev.txt`:
+  `pip install playwright && playwright install chromium`, or point `CHROMIUM=` at an installed
+  Chromium. Then copy the printed sizes into the `width`/`height` attributes in `help.html` (2x
+  images: half) and of `week.png` in `site/index.html`. The images are saved as palette PNGs.
+- The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with these
+  screenshots. Its texts follow the settings (slot times, booking horizon), the role (admin
+  paragraph) and whether mail is configured. When the calendar, booking or cancelling changes, update
+  `help.html` too.
 
 ## Testing
 

@@ -1,6 +1,7 @@
 """SQLite access: one connection per request, schema setup and settings."""
 import os
 import sqlite3
+import time
 
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
@@ -145,12 +146,31 @@ def ensure_writable(path):
                 f'in the README.')
 
 
+def enable_wal(con, timeout=30):
+    """Switch the database file to WAL mode (stored in the file, better for parallel workers).
+
+    SQLite doesn't wait for a busy database when changing the journal mode, it fails at once with
+    "database is locked". On a new database, a second Gunicorn worker gets there while the first one
+    is still in init_db()'s transaction, so retry until that one is done.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            if con.execute('PRAGMA journal_mode').fetchone()[0] != 'wal':
+                con.execute('PRAGMA journal_mode = WAL')
+            return
+        except sqlite3.OperationalError as e:
+            if 'locked' not in str(e) or time.monotonic() > deadline:
+                raise
+            time.sleep(0.05)
+
+
 def init_db():
     """Create the schema and, on an empty database, the first admin from the config."""
     con = connect()
     con.isolation_level = None  # explicit transaction below
     try:
-        con.execute('PRAGMA journal_mode = WAL')  # stored in the file, better for parallel workers
+        enable_wal(con)
         # IMMEDIATE takes the write lock, so parallel Gunicorn workers run this one after another
         con.execute('BEGIN IMMEDIATE')
         for statement in SCHEMA:

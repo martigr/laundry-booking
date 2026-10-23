@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 
 import pytest
@@ -278,3 +279,20 @@ def test_access_log_hides_tokens():
     assert atoms['f'] == 'https://wk.test/unsubscribe/***'
     assert atoms['{raw_uri}e'] == '/reset-password/***?x=1'
     assert 'SECRET' not in str(atoms)
+
+
+def test_startup_waits_for_another_worker(tmp_path):
+    # A second Gunicorn worker starts while the first one still holds the write lock in init_db().
+    # Switching to WAL doesn't wait for a lock in SQLite, so init_db() has to retry.
+    path = tmp_path / 'new.db'
+    other = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    other.execute('BEGIN IMMEDIATE')
+    other.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    release = threading.Timer(0.3, other.execute, ['COMMIT'])
+    release.start()
+    try:
+        create_app({'TESTING': True, 'DATABASE': str(path)})
+    finally:
+        release.join()
+        other.close()
+    assert sqlite3.connect(path).execute('PRAGMA journal_mode').fetchone() == ('wal',)
