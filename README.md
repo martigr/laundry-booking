@@ -40,6 +40,8 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
   with time and IP address; entries are deleted after a configurable number of days (default 90)
 - Help page for residents ("Hilfe") with screenshots: how to book a slot or a whole day and how to cancel
 - The app version is shown at the bottom of every page (when logged in)
+- Privacy notice at `/privacy` (German, public), linked in the footer of every page: who runs the app,
+  which data it keeps, who sees what, how long, the session cookie (the only cookie, so no cookie banner)
 - Mail notifications, each switched on per user in the profile: reminder before your own
   booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
   addresses are confirmed by a link first; every mail has a one-click unsubscribe link
@@ -233,6 +235,8 @@ Before the app goes online:
 - [ ] After the first start: log in, change the admin password in the profile and remove
       `ADMIN_PASSWORD` from `.env`
 - [ ] `SECURITY_CONTACT` set, so people know whom to tell about a problem
+- [ ] `PRIVACY_CONTROLLER` and `PRIVACY_CONTACT` set, and `/privacy` read once: it names hosting and mail
+      providers only in general terms, so check that it fits your setup (e.g. servers abroad)
 - [ ] Daily backups on another machine, restore tried once
 - [ ] Updates at least monthly (`docker compose build --pull`)
 
@@ -291,6 +295,8 @@ in the profile makes the old one stop working.
 | `SESSION_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS |
 | `TRUSTED_PROXIES` | `0` | Number of reverse proxies whose `X-Forwarded-For`/`-Proto` headers are trusted (see *HTTPS*) |
 | `SECURITY_CONTACT` | – | Contact for security reports in `/.well-known/security.txt`, e.g. `mailto:verwaltung@example.ch` |
+| `PRIVACY_CONTROLLER` | – | Who is responsible for the data (person, association or management), shown on `/privacy` |
+| `PRIVACY_CONTACT` | – | How to reach them on `/privacy`: an e-mail address (linked as `mailto:`) or an `https://` URL |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
 | `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails and the calendar link |

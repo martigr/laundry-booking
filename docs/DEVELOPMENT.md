@@ -30,6 +30,7 @@ laundry/                  # the application package
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
 ├── auth.py               # bp "auth": login/logout, login throttling, CSRF, login_required/admin_required
 ├── security.py           # security headers (CSP etc.), /.well-known/security.txt
+├── privacy.py            # public privacy notice /privacy
 ├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel
 ├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
@@ -53,6 +54,7 @@ laundry/                  # the application package
     ├── audit.html        # audit log table with filter and paging
     ├── help.html         # help page for residents
     ├── auth_base.html    # layout of the logged-out pages (login, forgot/reset password, unsubscribe)
+    ├── privacy.html      # privacy notice; own logged-out layout, normal layout when logged in
     ├── forgot_password.html, reset_password.html, unsubscribe.html, confirm_email.html
 tests/
 ├── conftest.py           # fixtures: app, client, login, csrf, query, reservations
@@ -62,6 +64,7 @@ tests/
 ├── test_audit.py         # audit log entries, page, rotation; version in the footer
 ├── test_cli.py           # CLI commands, first-admin bootstrap
 ├── test_help.py          # help page: content, settings, screenshots exist
+├── test_privacy.py       # privacy page with and without login, contact, footer links
 ├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
 └── test_security.py      # headers, input limits, redirects, login throttling, sessions, security.txt, backup
@@ -111,7 +114,8 @@ duplicated.
 `create_app(test_config=None)` reads the environment (see the README for the table) and
 then applies `test_config` on top. Config keys: `SECRET_KEY`, `DATABASE`, `TIMEZONE`,
 `ADMIN_USERNAME`, `ADMIN_PASSWORD`, the Flask session cookie settings, `MAX_CONTENT_LENGTH` (64 KB),
-`TRUSTED_PROXIES` (wraps the app in werkzeug's `ProxyFix` when > 0), `SECURITY_CONTACT`, `BASE_URL`
+`TRUSTED_PROXIES` (wraps the app in werkzeug's `ProxyFix` when > 0), `SECURITY_CONTACT`,
+`PRIVACY_CONTROLLER`, `PRIVACY_CONTACT`, `BASE_URL`
 and the `SMTP_*`/`MAIL_*` settings.
 
 ## Data model
@@ -236,6 +240,7 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/calendar/<token>.ics` | GET | `ical.feed` | token | The bookings of the token owner's household (or their own) as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/.well-known/security.txt` | GET | `security_txt` | public | RFC 9116; `SECURITY_CONTACT` plus the project's advisory link, `Expires` 180 days ahead |
+| `/privacy` | GET | `privacy` | public | Privacy notice (German); `PRIVACY_CONTROLLER`/`PRIVACY_CONTACT`, audit retention from the settings; contact links only as `mailto:`/`http(s):` |
 
 ### Booking rules
 
@@ -419,6 +424,10 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 
 - The footer of every logged-in page shows `laundry.__version__` (`app_version` in templates). It is
   not shown on the logged-out pages, so the version isn't public.
+- Every page links to `/privacy`: logged in via the footer in `base.html`, logged out via the
+  `login-footer` in `auth_base.html` (no version). `privacy.html` renders the normal layout for
+  users and its own header and footer (without version) otherwise. When the page states what the
+  app stores or for how long, keep it in sync with the code (e.g. new tables, retention, cookies).
 
 - Design tokens are CSS variables in `:root` of `style.css`. Blue = yours or your household's,
   grey = someone else's, dashed = free, orange = today and the running slot.
