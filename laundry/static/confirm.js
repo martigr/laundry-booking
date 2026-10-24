@@ -33,7 +33,9 @@
   dialog.addEventListener('close', function () {
     var form = pending;
     if (form && dialog.returnValue === 'ok') {
-      form.submit();  // bypasses the submit event, so no second dialog
+      // requestSubmit() fires the submit event again (scroll.js saves the position), which this
+      // listener lets through because the form is still `pending`; submit() for older browsers
+      if (form.requestSubmit) form.requestSubmit(); else form.submit();
     }
     pending = null;
   });

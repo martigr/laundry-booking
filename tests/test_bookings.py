@@ -1,3 +1,8 @@
+from pathlib import Path
+
+STATIC = Path(__file__).resolve().parent.parent / 'laundry' / 'static'
+
+
 
 def book(client, token, day, slot):
     return client.post('/book', data={'day': day, 'slot': slot, 'csrf_token': token, 'next': '/?week=' + day})
@@ -31,6 +36,29 @@ def test_no_open_redirect(client, login):
     for target in ['//evil.example', '/\\evil.example', 'https://evil.example']:
         r = client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t, 'next': target})
         assert r.headers['Location'] == '/'
+
+
+def test_flash_after_booking_can_float(client, login):
+    """static/scroll.js keeps the scroll position after a booking and floats the `.flashes` box."""
+    t = login('bob')
+    html = client.get(book(client, t, '2026-10-16', 'Abend').headers['Location']).get_data(as_text=True)
+    assert '<div class="flashes">' in html and 'Gebucht: Fr 16. Okt. · Abend' in html
+    assert '<script src="/static/scroll.js" defer></script>' in html
+    assert '<div class="flashes">' not in client.get('/').get_data(as_text=True)  # consumed
+
+    js = (STATIC / 'scroll.js').read_text()
+    assert "querySelector('.flashes')" in js and 'input[name="next"]' in js
+    # confirm.js resubmits with requestSubmit(), so scroll.js also sees confirmed forms
+    assert 'requestSubmit' in (STATIC / 'confirm.js').read_text()
+
+
+def test_keep_scroll_on_profile_not_admin(client, login):
+    """scroll.js also covers forms inside [data-keep-scroll]: the profile, but not the admin page,
+    where the box with a new password must stay at the top."""
+    login('alice')
+    assert 'data-keep-scroll' in client.get('/profile').get_data(as_text=True)
+    assert 'data-keep-scroll' not in client.get('/admin').get_data(as_text=True)
+    assert "closest('[data-keep-scroll]')" in (STATIC / 'scroll.js').read_text()
 
 
 def test_cancel_permissions(app, client, query, reservations, login):

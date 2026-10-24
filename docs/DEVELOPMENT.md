@@ -14,6 +14,7 @@ served. Admins manage users and the booking horizon and see an audit log.
   SQLite through the standard library, no ORM
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only the confirmation dialog in `static/confirm.js`,
+  keeping the scroll position after booking in `static/scroll.js`,
   the live password-repeat check in `static/profile.js` and the service worker of the home screen app;
   the booking note popover uses the HTML `popover` attribute, no script); no inline scripts, the CSP
   forbids them
@@ -43,6 +44,7 @@ laundry/                  # the application package
 ├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
+├── static/scroll.js      # keeps the scroll position after calendar/profile forms; floating flash message
 ├── static/profile.js     # live "passwords don't match" hint on the profile page
 ├── static/pwa.js         # registers the service worker
 ├── static/offline.js     # offline page: reload when back online
@@ -467,6 +469,13 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   `data-confirm-ok` (button text) and `data-confirm-danger` (red button). `confirm.js` shows
   the `<dialog>` from `base.html`; without JavaScript the form submits directly, so the
   permission check belongs in the view as always. Never use `window.confirm()` directly.
+- Scroll position: calendar forms (they carry a hidden `next`) and forms inside an element with
+  `data-keep-scroll` (the profile page) make `static/scroll.js` remember `scrollY` in
+  `sessionStorage`; when the redirect lands on the same page it scrolls back and
+  turns the `.flashes` box into a message floating at the top of the screen (hides after 5 s or on
+  tap). `confirm.js` resubmits with `requestSubmit()` so confirmed forms are covered too. Without
+  JavaScript the page starts at the top with the message in place, as before. Not on the admin
+  page: the box with a generated password must stay visible at the top.
 - Screenshots are taken by `scripts/screenshots.py`, each set on its own temporary database with
   fixed data and a fixed clock (Thursday afternoon, so today and a running slot are visible):
   - `readme`: `docs/screenshots/` for the README and the project page (desktop 1280 px wide, phone

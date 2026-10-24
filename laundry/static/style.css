@@ -102,6 +102,13 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .flash { padding: 14px 18px; border-radius: 14px; font-weight: 600; font-size: 14px; border: 1px solid; }
 .flash-ok { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
 .flash-warn { background: var(--warm-soft); color: var(--warm-ink); border-color: var(--warm-line); }
+.flashes { display: flex; flex-direction: column; gap: 10px; }
+/* static/scroll.js: after a form kept the scroll position, the message floats at the top of the screen */
+.flashes.floating { position: fixed; top: 12px; left: 50%; z-index: 10; width: min(560px, calc(100% - 32px)); transform: translateX(-50%); cursor: pointer; transition: opacity 0.3s, visibility 0.3s; animation: flash-in 0.2s ease-out; }
+.flashes.floating .flash { box-shadow: 0 12px 32px rgba(20, 32, 43, 0.18); }
+.flashes.floating.gone { opacity: 0; visibility: hidden; }
+@keyframes flash-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+@media (prefers-reduced-motion: reduce) { .flashes.floating { animation: none; transition: none; } }
 
 /* --- Week view --------------------------------------------------------- */
 .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-2); }
