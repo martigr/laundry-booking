@@ -188,8 +188,39 @@ docker compose exec web rm /data/backup.db
 ```
 
 Run this daily (cron) and keep copies on another machine. Backups contain password hashes and mail
-addresses: store them private (`chmod 600`) or encrypted, and delete old ones. Try a restore
-once, before you need it:
+addresses: store them private (`chmod 600`) or encrypted, and delete old ones.
+
+Example for a NAS mounted via NFS: [`scripts/backup-nas.sh`](scripts/backup-nas.sh) writes a backup
+with `flask backup` in a one-off container directly to the NAS and deletes backups older than 30 days.
+It refuses to run when the NAS is not mounted, writes under a temporary name (an aborted run leaves no
+broken backup) and creates the files readable only by the app user (UID 1000, so the NFS export must
+let it write). Settings: `BACKUP_DIR` (default `/mnt/nas/laundry-booking`), `KEEP_DAYS` (default 30).
+Run it daily, e.g. with a systemd timer:
+
+```ini
+# /etc/systemd/system/laundry-backup.service
+[Unit]
+Description=Back up laundry-booking to the NAS
+RequiresMountsFor=/mnt/nas/laundry-booking
+
+[Service]
+Type=oneshot
+ExecStart=/srv/laundry-booking/scripts/backup-nas.sh
+
+# /etc/systemd/system/laundry-backup.timer
+[Timer]
+OnCalendar=*-*-* 03:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+`systemctl enable --now laundry-backup.timer`; check with `systemctl list-timers` and
+`journalctl -u laundry-backup`. Snapshots on the NAS (e.g. Synology Snapshot Replication) add
+a longer history.
+
+Try a restore once, before you need it:
 
 ```bash
 docker compose stop
