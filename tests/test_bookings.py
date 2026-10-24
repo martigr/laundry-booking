@@ -52,6 +52,15 @@ def test_flash_after_booking_can_float(client, login):
     assert 'requestSubmit' in (STATIC / 'confirm.js').read_text()
 
 
+def test_keep_scroll_on_profile_not_admin(client, login):
+    """scroll.js also covers forms inside [data-keep-scroll]: the profile, but not the admin page,
+    where the box with a new password must stay at the top."""
+    login('alice')
+    assert 'data-keep-scroll' in client.get('/profile').get_data(as_text=True)
+    assert 'data-keep-scroll' not in client.get('/admin').get_data(as_text=True)
+    assert "closest('[data-keep-scroll]')" in (STATIC / 'scroll.js').read_text()
+
+
 def test_cancel_permissions(app, client, query, reservations, login):
     t = login('bob')
     book(client, t, '2026-10-17', 'Abend')
