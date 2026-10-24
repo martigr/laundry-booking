@@ -85,6 +85,7 @@ SECURITY.md               # how to report vulnerabilities
 scripts/docker-smoke-test.sh  # starts a built image and checks health, user, volumes (CI)
 scripts/screenshots.py        # retakes the README and help page screenshots (needs Playwright)
 scripts/icons.py              # draws the home screen icons from the logo (needs Pillow)
+scripts/backup-nas.sh         # example: daily backup to an NFS-mounted NAS (see README)
 pyproject.toml            # project metadata, pytest and ruff config
 requirements.txt          # pinned runtime dependencies (installed by the Dockerfile)
 requirements-dev.txt      # + pytest, ruff
