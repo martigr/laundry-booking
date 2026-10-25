@@ -626,8 +626,11 @@ public once under *Packages → laundry-booking → Package settings → Change 
 **Pre-releases** for trying a version on staging: set the version to e.g. `1.6.0-beta.1` (both places),
 push the tag `v1.6.0-beta.1` on the commit to test (it may be on a PR branch). The workflow publishes only
 the image tag `1.6.0-beta.1` (not `1.6`, `1` or `latest`, so production on `:1` doesn't pick it up) and
-marks the GitHub release as pre-release. Further betas count up (`-beta.2`); for the final release set
-`1.6.0` and tag as usual.
+marks the GitHub release as pre-release. Generated notes only list merged PRs, which is wrong for a beta
+from an open PR, so write the notes into an annotated tag; the workflow uses its message (Markdown):
+`git tag -a v1.6.0-beta.1 -F notes.md && git push origin v1.6.0-beta.1` (`-m "..."` for a short one). A
+lightweight tag still gets generated notes. Further betas count up (`-beta.2`); for the final release set
+`1.6.0` and tag as usual (generated notes).
 
 The project page in `site/` is published by `.github/workflows/pages.yml` on every push to `main`
 that touches `site/` or `docs/screenshots/` (or by hand via *Run workflow*). The workflow copies

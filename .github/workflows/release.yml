@@ -3,7 +3,9 @@ name: Release
 # Pushing a tag vX.Y.Z (matching the version in pyproject.toml) runs the CI checks, publishes the
 # Docker image to ghcr.io/<owner>/laundry-booking (amd64 + arm64) and creates the GitHub release.
 # A pre-release tag such as v1.6.0-beta.1 (for trying a version on staging) gets only its exact image
-# tag, not X.Y, X or latest, and a GitHub release marked as pre-release.
+# tag, not X.Y, X or latest, and a GitHub release marked as pre-release. Its notes are the message of
+# the tag if it is annotated (git tag -a v1.6.0-beta.1 -m "..."): generated notes only list merged PRs,
+# and a beta usually comes from a PR that isn't merged yet.
 on:
   push:
     tags: ["v*.*.*"]
@@ -64,10 +66,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create GitHub release with generated notes
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes=(--generate-notes)
           flags=()
-          case "$GITHUB_REF_NAME" in *-*) flags=(--prerelease) ;; esac
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${flags[@]}"
+          case "$GITHUB_REF_NAME" in
+            *-*)
+              flags=(--prerelease)
+              # An annotated tag points to a tag object (with the message), a lightweight one to the commit
+              ref="repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME"
+              if [ "$(gh api "$ref" --jq .object.type)" = tag ]; then
+                gh api "repos/$GITHUB_REPOSITORY/git/tags/$(gh api "$ref" --jq .object.sha)" --jq .message > notes.md
+                notes=(--notes-file notes.md)
+              fi
+              ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${notes[@]}" "${flags[@]}"
