@@ -150,7 +150,7 @@
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8l4.8 12 1.9-5.3L20 12.8z"/><path d="M4.5 4.5l1.5 1.5M8 3v2.2M3 8h2.2"/></svg></span>One click to book</h3><p>Click a free slot to book it, click your own booking to cancel it. "Ganzer Tag" books every free slot of a day at once.</p></div>
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2"/></svg></span>Week and month view</h3><p>The week calendar is the default; the month overview shows the bigger picture. Both work well on phones.</p></div>
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>At a glance</h3><p>A "now in the laundry room" card, the next free slot and your upcoming bookings, with adjacent slots shown as one block.</p></div>
-        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/></svg></span>Mail reminders</h3><p>Optional per user, once the address is confirmed: a reminder before your booking, a note when a slot becomes free, and password reset. One-click unsubscribe.</p></div>
+        <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></span>Mail and push reminders</h3><p>A reminder before your booking and a note when a slot becomes free: by mail, as a push notification on phone or computer, or both. Plain Web Push, no extra account.</p></div>
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M12 12.5v5M9.8 15.3l2.2 2.2 2.2-2.2"/></svg></span>In your calendar</h3><p>Subscribe to your own bookings, or those of your whole household, as an iCal feed: on the iPhone with one tap, on Android with ICSx⁵, or in Google Calendar. A private link you can renew any time.</p></div>
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="17" cy="9.5" r="2.3"/><path d="M15.5 14.7c2.4-.3 4.4.9 5 3.8"/></svg></span>Minimal admin area</h3><p>Create and delete users, group them into households, reset passwords, set how many weeks ahead people can book, cancel any booking. An audit log shows logins, failed login attempts, bookings and changes, and cleans itself up after a number of days you choose.</p></div>
         <div class="card"><h3><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></svg></span>Small and safe</h3><p>Flask and SQLite, no external CDNs. CSRF protection, a strict CSP, login throttling, an unprivileged container and weekly dependency audits.</p></div>
@@ -163,10 +163,16 @@
       <h2>Screenshots</h2>
       <p class="sub">The interface is in German (Swiss style).</p>
       <div class="gallery">
-        <figure>
-          <img src="screenshots/phone.png" alt="Week view on a phone" loading="lazy">
-          <figcaption>On the phone</figcaption>
-        </figure>
+        <div class="stack">
+          <figure>
+            <img src="screenshots/phone.png" alt="Week view on a phone" loading="lazy">
+            <figcaption>On the phone</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/notifications.png" alt="Notification settings: push button, reminder and freed slots by mail or push" loading="lazy">
+            <figcaption>Notifications by mail and push</figcaption>
+          </figure>
+        </div>
         <div class="stack">
           <figure>
             <img src="screenshots/month.png" alt="Month overview" loading="lazy">
@@ -198,7 +204,7 @@
           <h3>Production (Docker Compose)</h3>
 <pre><code>git clone https://github.com/martigr/laundry-booking
 cd laundry-booking
-cp .env.example .env   <span class="c"># SECRET_KEY, admin, BASE_URL, mail</span>
+cp .env.example .env   <span class="c"># SECRET_KEY, admin, BASE_URL, mail, push</span>
 chmod 600 .env
 docker compose up -d --build</code></pre>
         </div>
@@ -212,7 +218,7 @@ flask --app laundry --debug run
         </div>
       </div>
       <p class="sub" style="margin:24px 0 8px">Before going online, work through the <a href="https://github.com/martigr/laundry-booking#security-checklist">security checklist</a> (HTTPS proxy, secrets, backups, updates).</p>
-      <p class="sub">Configuration, mail setup, volumes and the command line are described in the <a href="https://github.com/martigr/laundry-booking#readme">README</a>; architecture and conventions in <a href="https://github.com/martigr/laundry-booking/blob/main/docs/DEVELOPMENT.md">docs/DEVELOPMENT.md</a>.</p>
+      <p class="sub">Configuration, mail and push setup, volumes and the command line are described in the <a href="https://github.com/martigr/laundry-booking#readme">README</a>; architecture and conventions in <a href="https://github.com/martigr/laundry-booking/blob/main/docs/DEVELOPMENT.md">docs/DEVELOPMENT.md</a>.</p>
     </div>
   </section>
 </main>

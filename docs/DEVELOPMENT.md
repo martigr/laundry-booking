@@ -15,7 +15,8 @@ served. Admins manage users and the booking horizon and see an audit log.
 - **Frontend:** server-rendered Jinja templates, one stylesheet, no build step
   and practically no JavaScript (only the confirmation dialog in `static/confirm.js`,
   keeping the scroll position after booking in `static/scroll.js`,
-  the live password-repeat check in `static/profile.js` and the service worker of the home screen app;
+  the live password-repeat check in `static/profile.js`, the push button in `static/push.js` and the service
+  worker of the home screen app;
   the booking note popover uses the HTML `popover` attribute, no script); no inline scripts, the CSP
   forbids them
 - **UI language:** German. Code, comments, commit messages and docs: English.
@@ -30,22 +31,24 @@ laundry/                  # the application package
 ├── users.py              # create_user(), get_user*(), set_password(), clean_email(), UserError
 ├── mail.py               # is_configured(), deliver(): one plain-text mail over SMTP
 ├── notifications.py      # outbox: queue_*() for reminders/freed slots/password reset, run_once()
+├── push.py               # Web Push: is_configured(), valid_subscription(), deliver() via pywebpush, VAPID key
 ├── slots.py              # SLOTS, now() (the only clock), date formatting, booking horizon
 ├── auth.py               # bp "auth": login/logout, login throttling, CSRF, login_required/admin_required
 ├── security.py           # security headers (CSP etc.), /.well-known/security.txt
 ├── privacy.py            # public privacy notice /privacy
 ├── accesslog.py          # Gunicorn logger class that blanks tokens of mail links in the access log
 ├── bookings.py           # bp "bookings": week/month view, book (slot or day), cancel, booking notes
-├── profile.py            # bp "profile": display name, mail settings, calendar link, password; confirm address, unsubscribe
+├── profile.py            # bp "profile": display name, notification settings, push devices, calendar link, password; confirm address, unsubscribe
 ├── ical.py               # bp "ical": the bookings of the user's household as an iCalendar feed (calendar subscription)
 ├── guide.py              # bp "help": the help page (how to book and cancel, with screenshots)
 ├── pwa.py                # bp "pwa": service worker /sw.js and offline page /offline (home screen app)
 ├── admin.py              # bp "admin": users, households, settings, audit log page
-├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, backup
+├── cli.py                # flask commands: create-user, make-admin, seed-demo, send-notifications, gen-vapid-key, backup
 ├── static/style.css      # all styles (design tokens as CSS variables)
 ├── static/confirm.js     # styled confirmation dialog for forms with data-confirm
 ├── static/scroll.js      # keeps the scroll position after calendar/profile forms; floating flash message
 ├── static/profile.js     # live "passwords don't match" hint on the profile page
+├── static/push.js        # profile page: "Push aktivieren/deaktivieren" for this device
 ├── static/pwa.js         # registers the service worker
 ├── static/offline.js     # offline page: reload when back online
 ├── static/manifest.webmanifest, static/icons/*.png  # home screen app (scripts/icons.py)
@@ -57,7 +60,7 @@ laundry/                  # the application package
     ├── index.html        # week view + side cards
     ├── month.html        # month overview (links into week view)
     ├── login.html        # overrides block body (no header)
-    ├── profile.html      # display name, mail notifications, password
+    ├── profile.html      # display name, notifications (mail/push), calendar link, password
     ├── admin.html
     ├── audit.html        # audit log table with filter and paging
     ├── help.html         # help page for residents
@@ -78,6 +81,7 @@ tests/
 ├── test_pwa.py           # manifest, icons, service worker, offline page
 ├── test_ical.py          # calendar feed: content, time zones, link create/renew/delete, 404s
 ├── test_notifications.py # reminders, freed slots, password reset, unsubscribe, retries, SMTP settings
+├── test_push.py          # push devices (subscribe/unsubscribe, validation), push reminders/freed slots, VAPID key
 └── test_security.py      # headers, input limits, redirects, login throttling, sessions, security.txt, backup
 docker-entrypoint.sh      # fixes /data ownership, drops root (PUID/PGID)
 docker-compose.yml        # web + notifier container, settings from .env (.env.example)
@@ -128,8 +132,8 @@ duplicated.
 then applies `test_config` on top. Config keys: `SECRET_KEY`, `DATABASE`, `TIMEZONE`,
 `ADMIN_USERNAME`, `ADMIN_PASSWORD`, the Flask session cookie settings, `MAX_CONTENT_LENGTH` (64 KB),
 `TRUSTED_PROXIES` (wraps the app in werkzeug's `ProxyFix` when > 0), `SECURITY_CONTACT`,
-`PRIVACY_CONTROLLER`, `PRIVACY_CONTACT`, `BASE_URL`
-and the `SMTP_*`/`MAIL_*` settings.
+`PRIVACY_CONTROLLER`, `PRIVACY_CONTACT`, `BASE_URL`,
+the `SMTP_*`/`MAIL_*` settings and `VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (push).
 
 ## Data model
 
@@ -143,8 +147,11 @@ display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE
 is_admin      INTEGER 0/1               note      TEXT  shown to everyone, max. 80 chars, NULL = none
 email         TEXT  optional              UNIQUE (day, slot)
 email_verified INTEGER 0/1  mails only go out when 1
-reminder_minutes INTEGER 0 = off
-notify_freed  INTEGER 0/1
+reminder_minutes INTEGER 0 = off, else lead time of the reminder
+reminder_mail INTEGER 0/1  reminder by mail (default 1)
+reminder_push INTEGER 0/1  reminder by push
+notify_freed  INTEGER 0/1  freed slots by mail
+freed_push    INTEGER 0/1  freed slots by push
 session_version INTEGER  +1 on every password change
 calendar_token TEXT UNIQUE  secret of the calendar feed URL, NULL = none
 household_id  INTEGER → households.id ON DELETE SET NULL, NULL = none
@@ -156,10 +163,21 @@ name  TEXT UNIQUE (case-insensitive)
 
 notifications (outbox)
 ──────────────────────
-dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>', 'freed:<reservation id>:<user id>'
-to_addr, subject, body
+dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>' (push: plus ':push:<subscription id>'),
+                          'freed:<day>:<user id>:<mail | push:<subscription id>>:<queued at>'
+to_addr, subject, body    push: to_addr = host of the push service, body = JSON payload
 created_at, expires_at    not sent after expires_at (slot start, reset link validity)
 sent_at, attempts, last_error
+push_subscription_id      → push_subscriptions.id ON DELETE CASCADE, NULL = mail
+slots                     freed-slot messages: the slot names, 'Vormittag+Abend'
+send_after                not sent before (freed-slot messages wait FREED_HOLD), NULL = at once
+
+push_subscriptions (one per browser/device)
+──────────────────
+user_id     INTEGER → users.id ON DELETE CASCADE
+endpoint    TEXT UNIQUE   URL at the browser's push service; a secret of the device
+p256dh, auth TEXT         the browser's keys (base64url), for encrypting the message
+created_at  TEXT
 
 login_failures (failed logins of the last 15 minutes)
 ──────────────
@@ -218,8 +236,11 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 - Decorators: `@login_required` redirects to the login page; `@admin_required` also
   returns 403 for non-admins.
 - State-changing actions are plain HTML form POSTs that answer with a redirect
-  (Post/Redirect/Get). Feedback goes through `flash(message, 'ok' | 'warn')`.
-- After book/cancel, `back_to_calendar()` returns to the form's `next` field. Only local
+  (Post/Redirect/Get). Exception: `/push/subscribe` and `/push/unsubscribe`, which `static/push.js` calls with
+  `fetch` (form-encoded, with `csrf_token`) and which answer 204. Feedback goes through `flash(message, 'ok' | 'warn')`.
+- After book/cancel, `back_to_calendar()` returns to the form's `next` field. The templates fill it with
+  `request.script_root ~ request.full_path`: `full_path` alone lacks the prefix when a proxy mounts the app
+  below a path (`SCRIPT_NAME`, e.g. `/waschkueche`), and the redirect would leave the app. Only local
   paths are accepted; `//host`, anything with a backslash or a control character (browsers drop
   tabs and line breaks, so `/<tab>/host` would become `//host`) and absolute URLs fall back to `/`.
 - Dates from requests go through `slots.parse_day()`, which only accepts `MIN_DAY..MAX_DAY`
@@ -239,7 +260,7 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/cancel` | POST | `bookings.cancel_many` | owner, housemate or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
 | `/note` | POST | `bookings.note` | owner or housemate | `id` (repeated), `note`, `next`; sets the note of a block (empty clears it), skips ended slots; 400 without ids or above 80 characters |
 | `/help` | GET | `help.index` | user | Help page: calendar, booking, cancelling, month view, phone, households, profile |
-| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
+| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (`email`, `reminder_minutes`, checkboxes `reminder_mail`, `reminder_push`, `notify_freed`, `freed_push`; the push ones only count while push is configured; a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users, households and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
@@ -251,8 +272,10 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/admin/audit` | GET | `admin.audit_log` | admin | Audit log, newest first, 50 per page; `?kind=login\|booking\|settings\|admin`, `?page=N`; 400 for an unknown kind or page < 1 |
 | `/forgot-password` | GET/POST | `auth.forgot_password` | public, 404 without mail | Queues a reset mail (at most one per user in 15 min); same answer whether the account exists or not |
 | `/reset-password/<token>` | GET/POST | `auth.reset_password` | token | Signed, valid 1 h, single use (contains part of the password hash) |
+| `/push/subscribe` | POST | `profile.push_subscribe` | user, 404 without push | `endpoint`, `p256dh`, `auth` from `static/push.js`; 204; 400 unless the endpoint is `https` at a known push service and the keys have the right size; an endpoint of another user moves to this one; at most 10 devices per user (oldest dropped) |
+| `/push/unsubscribe` | POST | `profile.push_unsubscribe` | user | `endpoint`; 204 (also if unknown), 400 without endpoint |
 | `/verify-email/<token>` | GET/POST | `profile.confirm_email` | token | Signed, valid 7 days, only for the address it was sent to; GET shows a button, POST confirms |
-| `/unsubscribe/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off |
+| `/unsubscribe/<token>` | GET/POST | `profile.unsubscribe` | token | GET shows a button, POST switches the notification off by mail (push stays) |
 | `/calendar/<token>.ics` | GET | `ical.feed` | token | The bookings of the token owner's household (or their own) as iCalendar; 404 for unknown tokens |
 | `/health` | GET | `health` | public | Liveness probe |
 | `/sw.js` | GET | `pwa.service_worker` | public | Service worker; `Cache-Control: no-cache` |
@@ -351,7 +374,8 @@ nobody is logged in yet (login, mail links) and `user=False, username=...` for f
 
 Logged: logins, failed and blocked logins, logouts, password reset by mail link; booking and
 cancelling (with the owner's name when it wasn't one's own booking), booking notes (with the text); profile changes (display name,
-notification settings, confirmed address, unsubscribe, calendar link, password); admin actions
+notification settings, confirmed address, unsubscribe, push switched on/off for a device (with the push service's host,
+never the endpoint), calendar link, password); admin actions
 (users, households, settings) and `create-user`/`make-admin` on the command line. Rejected requests
 (400/403/404, invalid input) are not logged, except logins.
 
@@ -366,19 +390,55 @@ notification settings, confirmed address, unsubscribe, calendar link, password);
 When you add a user action, add an `ACTIONS` entry, call `record()` in the view's transaction and
 extend `tests/test_audit.py`.
 
-## Mail notifications
+## Notifications (mail and push)
 
-All mail goes through the `notifications` table (outbox pattern):
+Reminders and "a slot became free" go out by mail, by push or both; each user picks the channels per
+notification in the profile (`reminder_mail`/`reminder_push` with the lead time `reminder_minutes`,
+`notify_freed`/`freed_push`). Password reset and address confirmation are mail only.
 
-1. Something queues a row: `bookings.cancel_reservations()` calls `queue_freed_slots()` (one mail per day and subscriber, also when a whole day is cancelled), `auth.forgot_password()`
+All of it goes through the `notifications` table (outbox pattern):
+
+1. Something queues a row: `bookings.cancel_reservations()` calls `queue_freed_slots()` (one message per day,
+   subscriber and channel, also when a whole day is cancelled: the message waits `FREED_HOLD` (2 min,
+   `send_after`), and slots of the same day cancelled meanwhile are added to it and restart the wait
+   (`_queue_freed()`), so cancelling slot by slot doesn't send one message each), `auth.forgot_password()`
    calls `queue_password_reset()`, and `run_once()` calls `queue_due_reminders()`.
-   `dedupe_key` is UNIQUE and inserts use `INSERT OR IGNORE`, so a mail is queued at most once.
+   `dedupe_key` is UNIQUE and inserts use `INSERT OR IGNORE`, so a message is queued at most once.
+   Push messages get one row per device of the user (`_queue_push()`), so each device is retried on its own.
 2. `flask send-notifications` (`--loop 60` in the `notifier` container) runs `run_once()`: queue due
    reminders, send unsent rows that haven't expired, retry failures up to `MAX_ATTEMPTS`, delete
-   rows older than 30 days.
+   rows older than 30 days. Rows of a channel that is no longer configured wait.
 
-Why: a request never waits for the mail server, an outage only delays mails, and with several
-Gunicorn workers nothing is sent twice. Never call `mail.deliver()` from a view.
+Why: a request never waits for the mail server or a push service, an outage only delays messages, and with
+several Gunicorn workers nothing is sent twice. Never call `mail.deliver()` or `push.deliver()` from a view.
+
+### Push
+
+Web Push with VAPID through `pywebpush`; no third-party account. Push is on while `VAPID_PRIVATE_KEY`
+is set (`flask gen-vapid-key` prints one: base64url of the raw P-256 private key). `create_app()` fails
+at startup if the key can't be read (`push.check_config()`). `VAPID_SUBJECT` is the contact sent to the
+push services, by default `mailto:MAIL_FROM`, else `BASE_URL`.
+
+- **Subscribing:** the profile's push card (only when push is configured) has one button, run by
+  `static/push.js`. "Push aktivieren" asks for permission (must happen in the click handler), subscribes
+  with the server's public key (`data-key`, `push.public_key()`) via the service worker's `pushManager` and
+  POSTs `endpoint`, `p256dh` and `auth` as form fields with the CSRF token to `/push/subscribe`. "Push
+  deaktivieren" POSTs to `/push/unsubscribe` and then unsubscribes the browser. The button shows "active"
+  only when the browser has a subscription *and* the server has it (`data-endpoints`), so a subscription
+  the server dropped can be renewed; one made with an older key is replaced. Without support (no service
+  worker or `PushManager`, plain HTTP, iPhone outside the home screen app) or with blocked permission the
+  card says so and hides the button.
+- **A device belongs to one user:** subscribing an endpoint that another user had moves it (the old row
+  and its queued messages are deleted), so a shared tablet only gets the last subscriber's messages. At
+  most `MAX_PUSH_DEVICES` (10) per user; deleting a user deletes their devices.
+- **Sending:** `push.deliver()` encrypts the JSON payload (`{"title", "body", "url", "tag"}`) for the
+  device and signs the request with the VAPID key. `ttl` is the time until `expires_at` (slot start), else
+  one day. 404/410 from the push service mean the subscription is gone (`push.Gone`): `send_pending()`
+  deletes it, which cascades to its queued rows. Other errors are retried like mails.
+- **Service worker:** `templates/sw.js` shows the notification on `push` (icon `icon-192.png`, `tag`
+  replaces an older notification of the same booking or day) and on `notificationclick` focuses an open
+  window or opens `url`; URLs of other origins fall back to the app's start page.
+- Push needs HTTPS (or `localhost`). iOS/iPadOS 16.4+ only deliver push to the home screen app.
 
 Addresses must be confirmed: saving a new address in the profile (or an admin creating a user
 with one) sets `email_verified = 0` and queues `queue_email_verification()` (at most one per user
@@ -390,8 +450,8 @@ the account. Addresses that existed before the column was added count as confirm
 Rules: reminders go out within `reminder_minutes` before the slot start; back-to-back slots of the
 same user on one day are one block with one reminder before its first slot; freed slots are
 announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled.
-Without `SMTP_HOST`/`MAIL_FROM` nothing is queued and the "Passwort vergessen?" link is hidden.
-Mail texts are plain text and German; links use `BASE_URL`, since the notifier has no request.
+Without `SMTP_HOST`/`MAIL_FROM` no mail is queued and the "Passwort vergessen?" link is hidden; without
+`VAPID_PRIVATE_KEY` no push. Mail and push texts are German; links use `BASE_URL`, since the notifier has no request.
 
 ## Security
 
@@ -428,6 +488,11 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 - **Passwords:** werkzeug hashes (scrypt), length `db.MIN_PASSWORD_LENGTH`..`users.MAX_PASSWORD_LENGTH`.
 - **Calendar feed token:** random, 256 bits, one per user, revocable in the profile; the feed
   only answers GET and contains nothing but the bookings of the owner's household (or their own).
+- **Push endpoints** come from the browser, so they are user input that the notifier POSTs to:
+  `push.valid_subscription()` only accepts `https` URLs on port 443 without credentials at the browsers'
+  push services (`push.PUSH_HOSTS`: Google, Mozilla, Apple, Microsoft), so nobody can make the server call
+  internal addresses. The endpoint is a secret of the device: errors (`push.PushError`), logs, `to_addr`
+  and the audit log only carry the push service's host.
 - **Tokens in mail links:** signed with `SECRET_KEY` (itsdangerous). Reset tokens expire after one
   hour and stop working once the password changed; unsubscribe tokens only switch a notification
   off and need a POST (link scanners only GET). `queue_password_reset()` queues at most one reset
@@ -481,8 +546,13 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
 - Screenshots are taken by `scripts/screenshots.py`, each set on its own temporary database with
   fixed data and a fixed clock (Thursday afternoon, so today and a running slot are visible):
   - `readme`: `docs/screenshots/` for the README and the project page (desktop 1280 px wide, phone
-    390 px at 2x; households, five users, a week of audit entries). The Pages workflow copies them.
+    390 px at 2x; households, five users, a week of audit entries, the notification settings with push
+    active). The Pages workflow copies them.
   - `help`: `static/help/` for the help page (demo data, logged in as bob, highlights in orange).
+
+  Both sets run with mail and push configured (nothing is sent). Headless Chromium has no push service,
+  so the script grants the notification permission and replaces `PushManager.getSubscription()` with a
+  stand-in (`FAKE_PUSH`); the profile then shows the push button as a real browser would.
 
   Retake them when the UI changes visibly: `python scripts/screenshots.py` (both sets) or
   `python scripts/screenshots.py help`. It needs Playwright, which is not in `requirements-dev.txt`:
@@ -494,8 +564,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   the manifest icons) and `static/pwa.js`, which registers the service worker from `data-sw`
   (only in secure contexts: HTTPS or localhost). The icons are committed PNGs drawn by
   `python scripts/icons.py` (needs Pillow); rerun it when the logo or `--accent` changes.
-  The worker (`templates/sw.js`, served at `/sw.js` so its scope is the whole app) **never caches
-  pages**: they show bookings, carry CSRF tokens and must be current. It precaches only `/offline`,
+  The worker (`templates/sw.js`, served at `/sw.js` so its scope is the whole app) also shows push
+  messages (see *Push*). It **never caches pages**: they show bookings, carry CSRF tokens and must be current. It precaches only `/offline`,
   `style.css` and `offline.js`, answers GET navigations from the network (with navigation preload)
   and falls back to the offline page when that fails; forms (POST) and other requests pass through.
   The cache name contains `__version__`, so each release installs a new worker and refreshes the
@@ -503,7 +573,8 @@ Mail texts are plain text and German; links use `BASE_URL`, since the notifier h
   anything personal or consume flash messages (`test_pwa.py` checks both).
 - The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with these
   screenshots. Its texts follow the settings (slot times, booking horizon), the role (admin
-  paragraph) and whether mail is configured. When the calendar, booking or cancelling changes, update
+  paragraph) and whether mail and push are configured (the "Benachrichtigungen" section only appears
+  with at least one of them, its push part and screenshot only with push). When the calendar, booking or cancelling changes, update
   `help.html` too.
 
 ## Testing
@@ -519,6 +590,7 @@ Fixtures in `tests/conftest.py`:
 | `query` | `query(sql, *params)` returns rows as tuples |
 | `reservations` | current bookings as `(day, slot, username)` tuples |
 | `mailbox` | mails "sent" in the test as `(to, subject, body)`; `mail.deliver` is replaced, mail is configured with `BASE_URL=https://wk.test` |
+| `pushbox` | switches push on (`VAPID_PRIVATE_KEY`) and records push messages as `(endpoint, payload dict, ttl)`; `push.deliver` is replaced |
 
 Add a test for every new route or rule, including the 400/403/404 paths.
 
@@ -556,6 +628,16 @@ checks they match; semantic versioning: patch for fixes, minor for features, maj
 when an update needs manual steps) in a PR, merge it, then on `main`:
 `git tag v1.2.3 && git push origin v1.2.3`. The first push creates the package as private; make it
 public once under *Packages → laundry-booking → Package settings → Change visibility*.
+
+**Pre-releases** for trying a version on staging: set the version to e.g. `1.6.0-beta.1` (both places),
+push the tag `v1.6.0-beta.1` on the commit to test (it may be on a PR branch). The workflow publishes only
+the image tag `1.6.0-beta.1` (not `1.6`, `1` or `latest`, so production on `:1` doesn't pick it up) and
+marks the GitHub release as pre-release. Generated notes only list merged PRs, which is wrong for a beta
+from an open PR, so write the notes into an annotated tag; the workflow uses its message (Markdown):
+`git tag -a --cleanup=verbatim v1.6.0-beta.1 -F notes.md && git push origin v1.6.0-beta.1`. Without
+`--cleanup=verbatim` git drops every line starting with `#` as a comment, i.e. the Markdown headings. A
+lightweight tag still gets generated notes. Further betas count up (`-beta.2`); for the final release set
+`1.6.0` and tag as usual (generated notes).
 
 The project page in `site/` is published by `.github/workflows/pages.yml` on every push to `main`
 that touches `site/` or `docs/screenshots/` (or by hand via *Run workflow*). The workflow copies

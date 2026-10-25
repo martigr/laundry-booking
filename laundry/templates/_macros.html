@@ -12,7 +12,7 @@
   <form method="post" action="{{ url_for('bookings.note') }}" class="modal-body">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% for id in ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
-    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <input type="hidden" name="next" value="{{ request.script_root ~ request.full_path }}">
     <h2>Notiz für die anderen</h2>
     <p class="hint">{{ label }}{{ ' · ' ~ who if who }}</p>
     <textarea name="note" maxlength="{{ max_note }}" rows="3" placeholder="z. B. Ich hole die Wäsche erst um 13 Uhr" aria-label="Notiz">{{ note or '' }}</textarea>
@@ -50,13 +50,13 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="day" value="{{ c.day }}">
   <input type="hidden" name="slot" value="{{ c.slot }}">
-  <input type="hidden" name="next" value="{{ request.full_path }}">
+  <input type="hidden" name="next" value="{{ request.script_root ~ request.full_path }}">
   <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} buchen">{{ inner }}</button>
 </form>
 {%- elif c.cancelable -%}
 <form method="post" action="{{ url_for('bookings.cancel', rid=c.res['id']) }}"{% if not c.ours %} data-confirm-title="Fremde Buchung stornieren?" data-confirm="Die Buchung von {{ c.res['display_name'] }} ({{ c.label }}) wird storniert." data-confirm-ok="Stornieren" data-confirm-danger{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="next" value="{{ request.full_path }}">
+  <input type="hidden" name="next" value="{{ request.script_root ~ request.full_path }}">
   <button type="submit" class="{{ classes }}" aria-label="{{ c.day }} {{ c.slot }} ({{ who }}) stornieren">{{ inner }}</button>
 </form>
 {%- else -%}

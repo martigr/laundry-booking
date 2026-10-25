@@ -1,8 +1,9 @@
-"""Own display name, mail settings, calendar link and password; links from mails (confirm address, unsubscribe)."""
+"""Own display name, notification settings, push devices, calendar link and password; links from mails
+(confirm address, unsubscribe)."""
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash
 
-from . import audit, ical, mail
+from . import audit, ical, mail, push, slots
 from .auth import keep_session, login_required
 from .db import get_db
 from .notifications import REMINDER_CHOICES, queue_email_verification, read_unsubscribe_token, read_verify_token
@@ -10,11 +11,18 @@ from .users import MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, UserError, clean_email,
 
 bp = Blueprint('profile', __name__)
 
-# Unsubscribe link kinds: (column to switch off, label for the confirmation page)
+# Unsubscribe link kinds: (column to switch off, label for the confirmation page). Only the mail
+# channel: push messages are switched off in the profile.
 UNSUBSCRIBE = {
-    'reminder': ('reminder_minutes', 'Erinnerungen vor deinen Buchungen'),
+    'reminder': ('reminder_mail', 'Erinnerungen per Mail vor deinen Buchungen'),
     'freed': ('notify_freed', 'Mails, wenn ein Slot frei wird'),
 }
+MAX_PUSH_DEVICES = 10  # per user; subscribing another one drops the oldest
+
+
+def channels(by_mail, by_push):
+    """German summary for the audit log, e.g. 'Mail + Push'."""
+    return ' + '.join(name for name, on in (('Mail', by_mail), ('Push', by_push)) if on) or 'aus'
 
 
 @bp.route('/profile', methods=['GET', 'POST'])
@@ -27,8 +35,11 @@ def index():
         housemates = [r['display_name'] for r in get_db().execute(
             'SELECT display_name FROM users WHERE household_id = ? AND id != ? ORDER BY display_name COLLATE NOCASE',
             (g.user['household_id'], g.user['id']))]
+        push_endpoints = [r['endpoint'] for r in get_db().execute(
+            'SELECT endpoint FROM push_subscriptions WHERE user_id = ?', (g.user['id'],))]
         return render_template('profile.html', min_pw=MIN_PASSWORD_LENGTH, max_name=MAX_NAME_LENGTH,
-                               reminder_choices=REMINDER_CHOICES,
+                               reminder_choices=REMINDER_CHOICES, push_endpoints=push_endpoints,
+                               push_key=push.public_key() if push.is_configured() else None,
                                household=household and household['name'], housemates=housemates,
                                feed_url=ical.feed_url(token) if token else None,
                                webcal_url=ical.webcal_url(token) if token else None)
@@ -55,12 +66,20 @@ def index():
         if minutes not in dict(REMINDER_CHOICES):
             abort(400)
         changed = email != g.user['email']
+        reminder_mail = bool(request.form.get('reminder_mail'))
         notify_freed = bool(request.form.get('notify_freed'))
+        if push.is_configured():
+            reminder_push, freed_push = bool(request.form.get('reminder_push')), bool(request.form.get('freed_push'))
+        else:  # the form has no push boxes then; keep the choice for when push comes back
+            reminder_push, freed_push = bool(g.user['reminder_push']), bool(g.user['freed_push'])
         with get_db() as con:
-            con.execute('UPDATE users SET email = ?, reminder_minutes = ?, notify_freed = ? WHERE id = ?',
-                        (email, minutes, int(notify_freed), g.user['id']))
-            audit.record(con, 'notifications', f'Erinnerung: {dict(REMINDER_CHOICES)[minutes]}, '
-                         f'freie Slots: {"ja" if notify_freed else "nein"}'
+            con.execute('UPDATE users SET email = ?, reminder_minutes = ?, reminder_mail = ?, reminder_push = ?, '
+                        'notify_freed = ?, freed_push = ? WHERE id = ?',
+                        (email, minutes, int(reminder_mail), int(reminder_push), int(notify_freed),
+                         int(freed_push), g.user['id']))
+            audit.record(con, 'notifications', f'Erinnerung: {dict(REMINDER_CHOICES)[minutes]}'
+                         + (f' ({channels(reminder_mail, reminder_push)})' if minutes else '')
+                         + f', freie Slots: {channels(notify_freed, freed_push)}'
                          + (f', neue Adresse: {email or "keine"}' if changed else ''))
             if changed:
                 con.execute('UPDATE users SET email_verified = 0 WHERE id = ?', (g.user['id'],))
@@ -103,6 +122,43 @@ def index():
             except UserError as e:
                 flash(str(e), 'warn')
     return redirect(url_for('profile.index'))
+
+
+@bp.route('/push/subscribe', methods=['POST'])
+@login_required
+def push_subscribe():
+    """static/push.js sends the browser's subscription here (form fields, so the CSRF check applies).
+    A device belongs to whoever subscribed it last."""
+    if not push.is_configured():
+        abort(404)
+    endpoint, p256dh, auth = (request.form.get(k, '') for k in ('endpoint', 'p256dh', 'auth'))
+    if not push.valid_subscription(endpoint, p256dh, auth):
+        abort(400)
+    with get_db() as con:
+        # Also drops messages still queued for the device's previous owner
+        con.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,))
+        con.execute('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (g.user['id'], endpoint, p256dh, auth, slots.now().isoformat(timespec='seconds')))
+        con.execute('DELETE FROM push_subscriptions WHERE user_id = ? AND id NOT IN '
+                    '(SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT ?)',
+                    (g.user['id'], g.user['id'], MAX_PUSH_DEVICES))
+        audit.record(con, 'push_enabled', push.service_host(endpoint))
+    return '', 204
+
+
+@bp.route('/push/unsubscribe', methods=['POST'])
+@login_required
+def push_unsubscribe():
+    """The push button switched this device off. Works without push config too, to clean up."""
+    endpoint = request.form.get('endpoint', '')
+    if not endpoint:
+        abort(400)
+    with get_db() as con:
+        if con.execute('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?',
+                       (g.user['id'], endpoint)).rowcount:
+            audit.record(con, 'push_disabled', push.service_host(endpoint))
+    return '', 204
 
 
 @bp.route('/verify-email/<token>', methods=['GET', 'POST'])

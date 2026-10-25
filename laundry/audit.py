@@ -24,6 +24,8 @@ ACTIONS = {
     'notifications': ('Benachrichtigungen geändert', 'settings'),
     'email_confirmed': ('E-Mail-Adresse bestätigt', 'settings'),
     'unsubscribe': ('Mails abbestellt', 'settings'),
+    'push_enabled': ('Push auf einem Gerät aktiviert', 'settings'),
+    'push_disabled': ('Push auf einem Gerät deaktiviert', 'settings'),
     'calendar_link': ('Kalender-Link erstellt', 'settings'),
     'calendar_link_deleted': ('Kalender-Link gelöscht', 'settings'),
     'password_changed': ('Passwort geändert', 'settings'),

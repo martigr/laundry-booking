@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parent.parent / 'laundry' / 'static'
@@ -36,6 +37,18 @@ def test_no_open_redirect(client, login):
     for target in ['//evil.example', '/\\evil.example', 'https://evil.example']:
         r = client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t, 'next': target})
         assert r.headers['Location'] == '/'
+
+
+def test_back_to_the_calendar_under_a_path_prefix(client, login):
+    """Behind a proxy that mounts the app at /wk (SCRIPT_NAME), forms must send you back below /wk."""
+    t = login('bob')
+    book(client, t, '2026-10-16', 'Vormittag')  # so the page also has cancel and note forms
+    html = client.get('/?week=2026-10-16', base_url='http://localhost/wk').get_data(as_text=True)
+    targets = set(re.findall(r'name="next" value="([^"]*)"', html))
+    assert targets == {'/wk/?week=2026-10-16'}
+    r = client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t, 'next': targets.pop()},
+                    base_url='http://localhost/wk')
+    assert r.headers['Location'] == '/wk/?week=2026-10-16'
 
 
 def test_flash_after_booking_can_float(client, login):

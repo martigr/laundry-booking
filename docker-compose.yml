@@ -1,4 +1,4 @@
-# Web app + notifier (sends reminder and other mails every minute). Settings come from .env,
+# Web app + notifier (sends reminders, other mails and push messages every minute). Settings come from .env,
 # see .env.example. Start with: docker compose up -d --build
 # The app speaks plain HTTP: put an HTTPS reverse proxy in front of it (see README, "HTTPS").
 services:

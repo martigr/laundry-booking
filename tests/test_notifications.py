@@ -13,7 +13,8 @@ NOW = datetime(2026, 10, 15, 14, 20)
 
 def set_prefs(client, login, username, email, minutes=0, freed=False, verified=True):
     t = login(username)
-    data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'csrf_token': t}
+    data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'reminder_mail': '1',
+            'csrf_token': t}
     if freed:
         data['notify_freed'] = '1'
     client.post('/profile', data=data)
@@ -36,6 +37,11 @@ def run(app):
 
 def at(monkeypatch, *args):
     monkeypatch.setattr(slots, 'now', lambda: datetime(*args))
+
+
+def after_hold(monkeypatch):
+    """Freed-slot messages wait FREED_HOLD for more cancellations; move the clock past it."""
+    at(monkeypatch, 2026, 10, 15, 14, 23)
 
 
 def link_in(body, prefix):
@@ -121,7 +127,7 @@ def test_separate_blocks_get_separate_reminders(app, client, login, mailbox, mon
                                        'Waschküche: heute Vormittag (07:00 – 12:00)']
 
 
-def test_freed_slot_notifies_subscribers(app, client, login, mailbox, query):
+def test_freed_slot_notifies_subscribers(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
     t = set_prefs(client, login, 'bob', 'bob@example.ch', freed=True)
     client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
@@ -129,12 +135,13 @@ def test_freed_slot_notifies_subscribers(app, client, login, mailbox, query):
     for rid, in query('SELECT id FROM reservations'):
         client.post(f'/cancel/{rid}', data={'csrf_token': t})
 
+    after_hold(monkeypatch)
     run(app)
     assert [(m[0], m[1]) for m in mailbox] == [('alice@example.ch', 'Waschküche: Fr 16. Okt. Abend ist frei')]
     assert 'https://wk.test/?week=2026-10-16' in mailbox[0][2]
 
 
-def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, query):
+def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
     t = login('bob')
     client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
@@ -142,6 +149,7 @@ def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, quer
     assert len(ids) == 3
     client.post('/cancel', data={'id': ids, 'csrf_token': t})
 
+    after_hold(monkeypatch)
     run(app)
     assert len(mailbox) == 1
     to, subject, body = mailbox[0]
@@ -149,11 +157,12 @@ def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, quer
     assert '- Vormittag (07:00 – 12:00 Uhr)' in body and '- Abend (17:00 – 22:00 Uhr)' in body
 
 
-def test_unsubscribe_link(app, client, login, mailbox, query):
+def test_unsubscribe_link(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', 60, freed=True)
     t = login('bob')
     client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
+    after_hold(monkeypatch)
     run(app)
     path = link_in(mailbox[0][2], '/unsubscribe/')
 

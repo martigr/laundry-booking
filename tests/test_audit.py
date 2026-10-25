@@ -88,7 +88,7 @@ def test_profile_changes_are_logged(client, login, query):
     client.post('/profile', data={'action': 'name', 'display_name': 'Bobby', 'csrf_token': t})
     client.post('/profile', data={'action': 'name', 'display_name': '', 'csrf_token': t})  # invalid
     client.post('/profile', data={'action': 'notifications', 'email': 'bob@example.ch', 'reminder_minutes': '60',
-                                  'notify_freed': '1', 'csrf_token': t})
+                                  'reminder_mail': '1', 'notify_freed': '1', 'csrf_token': t})
     client.post('/profile', data={'action': 'calendar', 'csrf_token': t})
     client.post('/profile', data={'action': 'calendar', 'csrf_token': t})
     client.post('/profile', data={'action': 'calendar_delete', 'csrf_token': t})
@@ -98,7 +98,7 @@ def test_profile_changes_are_logged(client, login, query):
                                   'new_password2': 'x' * 12, 'csrf_token': t})
     assert entries(query)[1:] == [
         ('bob', 'display_name', 'Bob → Bobby'),
-        ('bob', 'notifications', 'Erinnerung: 1 Stunde vorher, freie Slots: ja, neue Adresse: bob@example.ch'),
+        ('bob', 'notifications', 'Erinnerung: 1 Stunde vorher (Mail), freie Slots: Mail, neue Adresse: bob@example.ch'),
         ('bob', 'calendar_link', ''),
         ('bob', 'calendar_link', 'ersetzt den alten'),
         ('bob', 'calendar_link_deleted', ''),

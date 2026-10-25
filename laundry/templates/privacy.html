@@ -54,6 +54,10 @@
         dazu schreibst.</li>
       <li><strong>E-Mail (freiwillig):</strong> Adresse, Bestätigungsstatus und deine Einstellungen zu Erinnerungen
         und Benachrichtigungen.</li>
+      {% if push_enabled %}
+      <li><strong>Push-Mitteilungen (freiwillig):</strong> für jedes Gerät, auf dem du Push aktivierst, die Adresse beim
+        Push-Dienst deines Browsers und die Schlüssel zum Verschlüsseln der Mitteilungen.</li>
+      {% endif %}
       <li><strong>Audit-Log:</strong> Anmeldungen, Buchungen und Änderungen an Profil und Verwaltung, mit Zeitpunkt
         und IP-Adresse.</li>
       <li><strong>Server-Protokoll:</strong> Anmeldungen und fehlgeschlagene Anmeldeversuche mit Benutzername und
@@ -72,6 +76,10 @@
         Du kannst ihn im Profil jederzeit erneuern oder löschen.</li>
       <li>Die App läuft auf einem Server, den der Betreiber selbst oder ein Hosting-Anbieter betreibt.
         Mails werden über einen Mail-Anbieter verschickt. Diese Anbieter bearbeiten die Daten nur im Auftrag.</li>
+      {% if push_enabled %}
+      <li>Push-Mitteilungen laufen über den Push-Dienst deines Browsers (z.&nbsp;B. Google, Apple, Mozilla, Microsoft).
+        Der Inhalt ist verschlüsselt; der Dienst sieht nur, wann eine Mitteilung an dein Gerät geht.</li>
+      {% endif %}
     </ul>
   </section>
 
@@ -80,7 +88,10 @@
     <ul>
       <li>Konto und Buchungen: bis ein Admin das Konto löscht. Die Buchungen werden dabei mitgelöscht.</li>
       <li>Audit-Log: {{ audit_days }} Tage, danach automatisch gelöscht.</li>
-      <li>Verschickte Mails: {{ keep_mail_days }} Tage.</li>
+      <li>Verschickte Mails{{ ' und Push-Mitteilungen' if push_enabled }}: {{ keep_mail_days }} Tage.</li>
+      {% if push_enabled %}
+      <li>Push-Geräte: bis du Push auf dem Gerät deaktivierst, der Browser es aufhebt oder ein Admin das Konto löscht.</li>
+      {% endif %}
       <li>Fehlgeschlagene Anmeldeversuche (Schutz vor Passwort-Raten): 15 Minuten.</li>
       <li>Server-Protokoll: je nach Einstellung des Servers, in der Regel einige Wochen.</li>
     </ul>

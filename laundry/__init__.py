@@ -6,7 +6,7 @@ from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Shown in the page footer; must match `version` in pyproject.toml (test_version_matches_pyproject)
-__version__ = '1.5.2'
+__version__ = '1.6.0'
 
 
 def create_app(test_config=None):
@@ -39,8 +39,12 @@ def create_app(test_config=None):
         SMTP_PASSWORD=os.environ.get('SMTP_PASSWORD'),
         MAIL_FROM=os.environ.get('MAIL_FROM'),
         MAIL_FROM_NAME=os.environ.get('MAIL_FROM_NAME', 'Waschküche'),
-        # Public address of the app, used for links in mails and the calendar link
+        # Public address of the app, used for links in mails, push messages and the calendar link
         BASE_URL=os.environ.get('BASE_URL', 'http://localhost:5000'),
+        # Push messages: key from `flask gen-vapid-key`; push is off while it is empty.
+        # The subject is a contact for the push services (default: mailto:MAIL_FROM, else BASE_URL).
+        VAPID_PRIVATE_KEY=os.environ.get('VAPID_PRIVATE_KEY'),
+        VAPID_SUBJECT=os.environ.get('VAPID_SUBJECT'),
     )
     if test_config:
         app.config.update(test_config)
@@ -58,7 +62,7 @@ def create_app(test_config=None):
         n = app.config['TRUSTED_PROXIES']
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n)
 
-    from . import admin, auth, bookings, cli, db, guide, ical, mail, privacy, profile, pwa, security
+    from . import admin, auth, bookings, cli, db, guide, ical, mail, privacy, profile, push, pwa, security
 
     db.ensure_writable(app.config['DATABASE'])
 
@@ -77,7 +81,8 @@ def create_app(test_config=None):
 
     @app.context_processor
     def template_globals():
-        return {'mail_enabled': mail.is_configured(), 'app_version': __version__}
+        return {'mail_enabled': mail.is_configured(), 'push_enabled': push.is_configured(),
+                'app_version': __version__}
 
     @app.route('/health')
     def health():
@@ -85,6 +90,7 @@ def create_app(test_config=None):
         return 'ok', 200
 
     with app.app_context():
+        push.check_config()
         db.init_db()
 
     return app
