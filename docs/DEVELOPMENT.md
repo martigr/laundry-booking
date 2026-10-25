@@ -163,12 +163,14 @@ name  TEXT UNIQUE (case-insensitive)
 
 notifications (outbox)
 ──────────────────────
-dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>', 'freed:<reservation id>:<user id>',
-                          push: the same plus ':push:<subscription id>'
+dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>' (push: plus ':push:<subscription id>'),
+                          'freed:<day>:<user id>:<mail | push:<subscription id>>:<queued at>'
 to_addr, subject, body    push: to_addr = host of the push service, body = JSON payload
 created_at, expires_at    not sent after expires_at (slot start, reset link validity)
 sent_at, attempts, last_error
 push_subscription_id      → push_subscriptions.id ON DELETE CASCADE, NULL = mail
+slots                     freed-slot messages: the slot names, 'Vormittag+Abend'
+send_after                not sent before (freed-slot messages wait FREED_HOLD), NULL = at once
 
 push_subscriptions (one per browser/device)
 ──────────────────
@@ -397,7 +399,9 @@ notification in the profile (`reminder_mail`/`reminder_push` with the lead time 
 All of it goes through the `notifications` table (outbox pattern):
 
 1. Something queues a row: `bookings.cancel_reservations()` calls `queue_freed_slots()` (one message per day,
-   subscriber and channel, also when a whole day is cancelled), `auth.forgot_password()`
+   subscriber and channel, also when a whole day is cancelled: the message waits `FREED_HOLD` (2 min,
+   `send_after`), and slots of the same day cancelled meanwhile are added to it and restart the wait
+   (`_queue_freed()`), so cancelling slot by slot doesn't send one message each), `auth.forgot_password()`
    calls `queue_password_reset()`, and `run_once()` calls `queue_due_reminders()`.
    `dedupe_key` is UNIQUE and inserts use `INSERT OR IGNORE`, so a message is queued at most once.
    Push messages get one row per device of the user (`_queue_push()`), so each device is retried on its own.

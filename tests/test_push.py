@@ -8,7 +8,7 @@ import requests
 from conftest import MAIL_CONFIG, NOW, REAL_PUSH_DELIVER, VAPID_KEY
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from test_notifications import at, run, verify
+from test_notifications import after_hold, at, run, verify
 
 from laundry import create_app, notifications, push, slots
 from laundry.db import get_db
@@ -238,7 +238,7 @@ def test_push_needs_no_email(app, client, login, mailbox, pushbox, monkeypatch):
     assert mailbox == [] and len(pushbox) == 1
 
 
-def test_freed_slot_by_push(app, client, login, mailbox, pushbox, query):
+def test_freed_slot_by_push(app, client, login, mailbox, pushbox, monkeypatch, query):
     ta = login('alice')
     save_prefs(client, ta, freed_push=True)
     subscribe(client, ta)
@@ -248,12 +248,56 @@ def test_freed_slot_by_push(app, client, login, mailbox, pushbox, query):
     client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
     client.post('/cancel', data={'id': [rid for rid, in query('SELECT id FROM reservations')], 'csrf_token': t})
 
+    after_hold(monkeypatch)
     run(app)
     assert mailbox == []
     assert [(e, p['title']) for e, p, _ in pushbox] == \
         [(ENDPOINT, 'Morgen Vormittag + Nachmittag + Abend sind frei')]  # not to bob
     assert pushbox[0][1]['body'] == 'Fr 16. Okt., 07:00 – 22:00 Uhr. Wer zuerst bucht, wäscht.'
     assert pushbox[0][1]['url'] == 'https://wk.test/?week=2026-10-16'
+
+
+def test_slots_cancelled_one_by_one_give_one_message(app, client, login, mailbox, pushbox, monkeypatch, query):
+    ta = login('alice')
+    save_prefs(client, ta, freed_mail=True, freed_push=True, email='alice@example.ch')
+    verify(app, 'alice')
+    subscribe(client, ta)
+    t = login('bob')
+    client.post('/book-day', data={'day': '2026-10-20', 'csrf_token': t})
+    ids = [rid for rid, in query('SELECT id FROM reservations ORDER BY id')]
+    for minute, rid in zip((20, 21, 22), (ids[2], ids[0], ids[1]), strict=True):  # each within the hold
+        at(monkeypatch, 2026, 10, 15, 14, minute)
+        client.post(f'/cancel/{rid}', data={'csrf_token': t})
+        assert run(app) == (0, 0)  # still waiting for more
+    at(monkeypatch, 2026, 10, 15, 14, 24)
+    assert run(app) == (2, 0)
+    assert [p['title'] for _, p, _ in pushbox] == ['Di 20. Okt. Vormittag + Nachmittag + Abend sind frei']
+    assert pushbox[0][1]['body'] == 'Di 20. Okt., 07:00 – 22:00 Uhr. Wer zuerst bucht, wäscht.'
+    assert [m[1] for m in mailbox] == ['Waschküche: Di 20. Okt. Vormittag + Nachmittag + Abend sind frei']
+    assert '- Vormittag (07:00 – 12:00 Uhr)\n- Nachmittag' in mailbox[0][2]
+
+    # A slot freed after the message went out gets its own message
+    client.post('/book', data={'day': '2026-10-20', 'slot': 'Abend', 'csrf_token': t})
+    client.post(f'/cancel/{query("SELECT MAX(id) FROM reservations")[0][0]}', data={'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 14, 27)
+    assert run(app) == (2, 0)
+    assert pushbox[-1][1]['title'] == 'Di 20. Okt. Abend ist frei'
+    assert pushbox[-1][1]['tag'] != pushbox[0][1]['tag']  # doesn't replace the first one on the phone
+
+
+def test_freed_title_is_capitalized_only_at_the_start(app, client, login, pushbox, monkeypatch, query):
+    ta = login('alice')
+    save_prefs(client, ta, freed_push=True)
+    subscribe(client, ta)
+    t = login('bob')
+    for day in ('2026-10-15', '2026-10-16', '2026-10-21'):
+        client.post('/book', data={'day': day, 'slot': 'Abend', 'csrf_token': t})
+    for rid, in query('SELECT id FROM reservations'):
+        client.post(f'/cancel/{rid}', data={'csrf_token': t})
+    after_hold(monkeypatch)
+    run(app)
+    assert sorted(p['title'] for _, p, _ in pushbox) == \
+        ['Heute Abend ist frei', 'Mi 21. Okt. Abend ist frei', 'Morgen Abend ist frei']
 
 
 def test_gone_subscription_is_removed(app, client, login, pushbox, monkeypatch, query):
@@ -275,6 +319,7 @@ def test_gone_subscription_is_removed(app, client, login, pushbox, monkeypatch, 
         calls.append(sub['endpoint'])
         raise push.Gone('push service answered 410')
     monkeypatch.setattr(push, 'deliver', gone)
+    after_hold(monkeypatch)
     assert run(app) == (0, 1)
     assert calls == [ENDPOINT]  # not tried again for the second message
     assert query('SELECT endpoint FROM push_subscriptions') == [(ENDPOINT + '-alice',)]  # alice's stays
@@ -292,6 +337,7 @@ def test_failed_push_is_retried(app, client, login, pushbox, monkeypatch, query)
     def broken(sub, payload, ttl):
         raise push.PushError('push service answered 500')
     monkeypatch.setattr(push, 'deliver', broken)
+    after_hold(monkeypatch)
     assert run(app) == (0, 1)
     assert query('SELECT to_addr, attempts, last_error, sent_at FROM notifications') == \
         [('fcm.googleapis.com', 1, 'push service answered 500', None)]
@@ -418,7 +464,8 @@ def test_push_columns_are_added_to_an_existing_database(tmp_path):
     # Mail reminders chosen before stay on
     assert con.execute('SELECT reminder_minutes, reminder_mail, reminder_push, freed_push FROM users').fetchall() == \
         [(60, 1, 0, 0)]
-    assert con.execute('SELECT dedupe_key, push_subscription_id FROM notifications').fetchall() == [('reset:1:x', None)]
+    assert con.execute('SELECT dedupe_key, push_subscription_id, slots, send_after FROM notifications').fetchall() == \
+        [('reset:1:x', None, None, None)]
     assert con.execute('SELECT COUNT(*) FROM push_subscriptions').fetchone() == (0,)
 
 

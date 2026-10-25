@@ -24,6 +24,7 @@ REMINDER_CHOICES = [
     (1440, '1 Tag vorher'),
 ]
 FREED_WINDOW = timedelta(days=7)   # only announce freed slots that start within this window
+FREED_HOLD = timedelta(minutes=2)  # freed slots of a day cancelled within this time go out as one message
 RESET_VALID = timedelta(hours=1)
 RESET_INTERVAL = timedelta(minutes=15)  # at most one reset (or verification) mail per user in this time
 VERIFY_VALID = timedelta(days=7)
@@ -95,18 +96,24 @@ def read_verify_token(token):
 
 # --- Queueing --------------------------------------------------------------------------------
 
-def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None, push_subscription_id=None):
+def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None, push_subscription_id=None,
+           slot_names=None, send_after=None):
     con.execute(
         'INSERT OR IGNORE INTO notifications (dedupe_key, to_addr, subject, body, created_at, expires_at, '
-        'push_subscription_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'push_subscription_id, slots, send_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (dedupe_key, to_addr, subject, body, slots.now().isoformat(timespec='seconds'),
-         expires_at.isoformat(timespec='seconds') if expires_at else None, push_subscription_id))
+         expires_at.isoformat(timespec='seconds') if expires_at else None, push_subscription_id,
+         slot_names, send_after.isoformat(timespec='seconds') if send_after else None))
+
+
+def _push_payload(title, body, url, tag):
+    return json.dumps({'title': title, 'body': body, 'url': url, 'tag': tag}, ensure_ascii=False)
 
 
 def _queue_push(con, dedupe_key, user_id, title, body, url, tag, expires_at):
     """One row per device of the user, so each is retried on its own. `to_addr` is only the push
     service's host (for the logs); the endpoint URL stays in push_subscriptions."""
-    payload = json.dumps({'title': title, 'body': body, 'url': url, 'tag': tag}, ensure_ascii=False)
+    payload = _push_payload(title, body, url, tag)
     for s in con.execute('SELECT id, endpoint FROM push_subscriptions WHERE user_id = ?', (user_id,)).fetchall():
         _queue(con, f'{dedupe_key}:push:{s["id"]}', push.service_host(s['endpoint']), title, payload,
                expires_at, s['id'])
@@ -114,6 +121,10 @@ def _queue_push(con, dedupe_key, user_id, title, body, url, tag, expires_at):
 
 def _when(day, now):
     return 'heute' if day == now.date() else ('morgen' if day == now.date() + timedelta(days=1) else fmt_day(day))
+
+
+def _first_upper(text):
+    return text[:1].upper() + text[1:]  # not str.capitalize(), which turns "Okt." into "okt."
 
 
 def _mail_to(user, switch):
@@ -134,8 +145,9 @@ def _footer(user_id, kind, what):
 def queue_freed_slots(con, freed, cancelled_by):
     """Bookings were cancelled: tell everyone who wants to know about freed slots.
 
-    `freed` is a list of (reservation_id, day, slot). Subscribers get one message per day and channel,
-    so cancelling a whole day doesn't send three.
+    `freed` is a list of (reservation_id, day, slot). Subscribers get one message per day and channel
+    (mail, each push device), also when the slots are cancelled one after another: the message waits
+    FREED_HOLD, and slots freed meanwhile join it (_queue_freed()).
     """
     if not (mail.is_configured() or push.is_configured()):
         return
@@ -152,27 +164,50 @@ def queue_freed_slots(con, freed, cancelled_by):
         WHERE (notify_freed = 1 OR freed_push = 1) AND id != ?
     """, (cancelled_by,)).fetchall()
     for day, entries in sorted(by_day.items()):
-        entries.sort(key=lambda e: e[2])
         names = [slot for _, slot, _ in entries]
-        lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
-        verb = 'ist' if len(names) == 1 else 'sind'
-        subject = f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei'
-        url = link('/?week=' + day.isoformat())
-        key = f'freed:{entries[0][0]}'
         for u in users:
             if _mail_to(u, 'notify_freed'):
-                body = (f'Hallo {u["display_name"]}\n\n'
-                        f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
-                        f'Jetzt buchen: {url}\n\n'
-                        f'Wer zuerst bucht, wäscht.\n'
-                        + _footer(u['id'], 'freed', '„Slot frei geworden“'))
-                _queue(con, f'{key}:{u["id"]}', u['email'], subject, body, expires_at=entries[-1][2])
+                _queue_freed(con, u, day, names, 'mail', u['email'])
             if _push_to(u, 'freed_push'):
-                # Short title: the phone shows the app's name anyway and cuts long titles off
-                _queue_push(con, f'{key}:{u["id"]}', u['id'],
-                            f'{_when(day, now).capitalize()} {" + ".join(names)} {verb} frei',
-                            f'{fmt_day(day)}, {_spans(day, names)} Uhr. Wer zuerst bucht, wäscht.', url, key,
-                            entries[-1][2])
+                for s in con.execute('SELECT id, endpoint FROM push_subscriptions WHERE user_id = ?',
+                                     (u['id'],)).fetchall():
+                    _queue_freed(con, u, day, names, f'push:{s["id"]}', push.service_host(s['endpoint']), s['id'])
+
+
+def _queue_freed(con, user, day, names, channel, to_addr, push_subscription_id=None):
+    """Queue "slots are free again" for one recipient (mail or one push device) and day, or add the
+    slots to the message for that day that is still waiting."""
+    now = slots.now()
+    prefix = f'freed:{day.isoformat()}:{user["id"]}:{channel}:'
+    waiting = con.execute('SELECT id, slots FROM notifications WHERE dedupe_key LIKE ? AND sent_at IS NULL',
+                          (prefix + '%',)).fetchone()
+    if waiting:
+        names = set(names) | set(waiting['slots'].split('+'))
+    names = [n for n in SLOT_NAMES if n in names]
+    verb = 'ist' if len(names) == 1 else 'sind'
+    url = link('/?week=' + day.isoformat())
+    if push_subscription_id is None:
+        lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
+        subject = f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei'
+        body = (f'Hallo {user["display_name"]}\n\n'
+                f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
+                f'Jetzt buchen: {url}\n\n'
+                f'Wer zuerst bucht, wäscht.\n'
+                + _footer(user['id'], 'freed', '„Slot frei geworden“'))
+    else:
+        # Short title: the phone shows the app's name anyway and cuts long titles off
+        subject = f'{_first_upper(_when(day, now))} {" + ".join(names)} {verb} frei'
+        body = _push_payload(subject, f'{fmt_day(day)}, {_spans(day, names)} Uhr. Wer zuerst bucht, wäscht.',
+                             url, prefix + now.isoformat(timespec='seconds'))
+    expires_at = slot_bounds(day, names[-1])[0]  # worth sending until the last of them starts
+    send_after = now + FREED_HOLD
+    if waiting:
+        con.execute('UPDATE notifications SET subject = ?, body = ?, slots = ?, expires_at = ?, send_after = ? '
+                    'WHERE id = ?', (subject, body, '+'.join(names), expires_at.isoformat(timespec='seconds'),
+                                     send_after.isoformat(timespec='seconds'), waiting['id']))
+    else:
+        _queue(con, prefix + now.isoformat(timespec='seconds'), to_addr, subject, body, expires_at,
+               push_subscription_id, '+'.join(names), send_after)
 
 
 def queue_due_reminders(con):
@@ -296,8 +331,9 @@ def send_pending():
         SELECT n.*, s.endpoint, s.p256dh, s.auth FROM notifications n
         LEFT JOIN push_subscriptions s ON s.id = n.push_subscription_id
         WHERE n.sent_at IS NULL AND n.attempts < ? AND (n.expires_at IS NULL OR n.expires_at > ?)
+          AND (n.send_after IS NULL OR n.send_after <= ?)
         ORDER BY n.id
-    """, (MAX_ATTEMPTS, now)).fetchall()
+    """, (MAX_ATTEMPTS, now, now)).fetchall()
     mail_on, push_on = mail.is_configured(), push.is_configured()
     sent = failed = 0
     gone = set()  # subscriptions deleted in this run; their other rows were fetched before

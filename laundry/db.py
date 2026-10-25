@@ -113,6 +113,10 @@ ADDED_COLUMNS = [
     ('users', 'freed_push', 'INTEGER NOT NULL DEFAULT 0'),
     # Set on push messages in the outbox (NULL = mail); they go when the device unsubscribes
     ('notifications', 'push_subscription_id', 'INTEGER REFERENCES push_subscriptions(id) ON DELETE CASCADE'),
+    # Freed-slot messages: the slot names ('Vormittag+Abend'), so later cancellations can join a waiting
+    # message, and the time it waits for them (not sent before; NULL = at once)
+    ('notifications', 'slots', 'TEXT'),
+    ('notifications', 'send_after', 'TEXT'),
 ]
 
 # audit_days: how long audit log entries are kept
