@@ -434,6 +434,10 @@ def test_help_and_privacy_mention_push_only_when_configured(app, client, login):
     assert 'Push' not in client.get('/help').get_data(as_text=True)
     assert 'Push' not in client.get('/privacy').get_data(as_text=True)
     app.config['VAPID_PRIVATE_KEY'] = VAPID_KEY
-    assert '«Push aktivieren»' in client.get('/help').get_data(as_text=True)
+    html = client.get('/help').get_data(as_text=True)
+    assert '<a href="#benachrichtigungen">Benachrichtigungen</a>' in html
+    assert 'per Mail, per Push-Mitteilung, beides oder gar nicht' in html
+    assert 'Tippe im Profil auf <strong>Push aktivieren</strong>' in html
+    assert '/static/help/notifications.png' in html
     page = client.get('/privacy').get_data(as_text=True)
     assert 'Push-Dienst deines Browsers' in page and 'Push-Geräte' in page

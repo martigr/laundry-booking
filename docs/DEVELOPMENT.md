@@ -539,8 +539,13 @@ Without `SMTP_HOST`/`MAIL_FROM` no mail is queued and the "Passwort vergessen?" 
 - Screenshots are taken by `scripts/screenshots.py`, each set on its own temporary database with
   fixed data and a fixed clock (Thursday afternoon, so today and a running slot are visible):
   - `readme`: `docs/screenshots/` for the README and the project page (desktop 1280 px wide, phone
-    390 px at 2x; households, five users, a week of audit entries). The Pages workflow copies them.
+    390 px at 2x; households, five users, a week of audit entries, the notification settings with push
+    active). The Pages workflow copies them.
   - `help`: `static/help/` for the help page (demo data, logged in as bob, highlights in orange).
+
+  Both sets run with mail and push configured (nothing is sent). Headless Chromium has no push service,
+  so the script grants the notification permission and replaces `PushManager.getSubscription()` with a
+  stand-in (`FAKE_PUSH`); the profile then shows the push button as a real browser would.
 
   Retake them when the UI changes visibly: `python scripts/screenshots.py` (both sets) or
   `python scripts/screenshots.py help`. It needs Playwright, which is not in `requirements-dev.txt`:
@@ -561,7 +566,8 @@ Without `SMTP_HOST`/`MAIL_FROM` no mail is queued and the "Passwort vergessen?" 
   anything personal or consume flash messages (`test_pwa.py` checks both).
 - The help page (`/help`, "Hilfe" in the navigation) explains booking and cancelling with these
   screenshots. Its texts follow the settings (slot times, booking horizon), the role (admin
-  paragraph) and whether mail is configured. When the calendar, booking or cancelling changes, update
+  paragraph) and whether mail and push are configured (the "Benachrichtigungen" section only appears
+  with at least one of them, its push part and screenshot only with push). When the calendar, booking or cancelling changes, update
   `help.html` too.
 
 ## Testing

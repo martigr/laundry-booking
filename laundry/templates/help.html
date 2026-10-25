@@ -28,6 +28,7 @@
         <li><a href="#monat">Monatsübersicht</a></li>
         <li><a href="#handy">Auf dem Handy</a></li>
         <li><a href="#haushalt">Haushalt</a></li>
+        {% if mail_enabled or push_enabled %}<li><a href="#benachrichtigungen">Benachrichtigungen</a></li>{% endif %}
         <li><a href="#profil">Profil, Benachrichtigungen und Passwort</a></li>
       </ol>
     </nav>
@@ -140,15 +141,52 @@
       erscheinen in «Eure nächsten Buchungen» und du kannst sie stornieren.</p>
   </section>
 
+  {% if mail_enabled or push_enabled %}
+  <section class="card" id="benachrichtigungen">
+    <h2>Benachrichtigungen</h2>
+    {% set channels = 'per Mail, per Push-Mitteilung, beides oder gar nicht' if mail_enabled and push_enabled
+                      else ('per Mail oder gar nicht' if mail_enabled else 'per Push-Mitteilung oder gar nicht') %}
+    <div class="help-phone">
+      {% if push_enabled %}{{ shot('notifications', 'Profil, Karte «Benachrichtigungen» mit dem Knopf «Push aktivieren» und den Häkchen «per Mail» und «per Push»', 374, 667) }}{% endif %}
+      <div>
+        <p>Die Waschküche erinnert dich an deine Buchungen und sagt dir Bescheid, wenn in den nächsten 7 Tagen ein
+          Slot frei wird. Im <a href="{{ url_for('profile.index') }}">Profil</a> unter «Benachrichtigungen» wählst du
+          für beides, ob du sie {{ channels }} bekommen willst, und klickst auf <strong>Speichern</strong>.
+          Für die Erinnerung wählst du auch, wie lange vorher sie kommt.</p>
+        {% if mail_enabled %}
+        <p><strong>Per Mail:</strong> Trage deine Adresse ein und bestätige sie über den Link in der Bestätigungsmail.
+          Vorher bekommst du keine Mails. Jede Mail hat unten einen Link zum Abbestellen.</p>
+        {% endif %}
+        {% if push_enabled %}
+        <p><strong>Per Push:</strong> Die Mitteilung erscheint direkt auf dem Handy oder Computer, wie bei einer
+          Chat-App. Schalte Push auf jedem Gerät einmal ein:</p>
+        <ol class="help-steps">
+          <li><strong>iPhone und iPad:</strong> Leg die Waschküche zuerst auf den Home-Bildschirm (siehe
+            <a href="#handy">Auf dem Handy</a>) und öffne sie von dort. In Safari selbst geht Push nicht.
+            Auf Android und am Computer geht es direkt im Browser.</li>
+          <li>Tippe im Profil auf <strong>Push aktivieren</strong> und erlaube die Mitteilungen.</li>
+          <li>Kreuze bei der Erinnerung und beim freien Slot <strong>per Push</strong> an und klicke auf
+            <strong>Speichern</strong>.</li>
+        </ol>
+        <p>Tippst du auf eine Mitteilung, öffnet sich die Woche mit dem Slot. Mit <strong>Push deaktivieren</strong>
+          schaltest du sie auf diesem Gerät wieder aus.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% if push_enabled %}
+    <p class="hint">Steht im Profil «Mitteilungen sind für diese Seite blockiert»? Dann hast du sie einmal abgelehnt.
+      Erlaube sie in den Einstellungen: auf dem iPhone unter Einstellungen → Mitteilungen → Waschküche, sonst in den
+      Website-Einstellungen des Browsers. Kommt nichts an, prüfe auch «Nicht stören» bzw. den Fokus-Modus.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section class="card" id="profil">
     <h2>Profil, Benachrichtigungen und Passwort</h2>
     <p>Im <a href="{{ url_for('profile.index') }}">Profil</a> (Klick auf deinen Namen oben rechts) kannst du</p>
     <ul class="help-list">
       <li>den <strong>Anzeigenamen</strong> ändern, unter dem dich die anderen im Kalender sehen,</li>
-      <li><strong>Benachrichtigungen</strong> einschalten: eine Erinnerung vor deinen Buchungen und eine Nachricht, wenn ein Slot frei wird,
-        je {% if push_enabled %}per Mail, per Push-Mitteilung oder beides (deine Mail-Adresse musst du zuerst über den Link in der
-        Bestätigungsmail bestätigen; Push schaltest du auf jedem Gerät mit «Push aktivieren» ein, auf dem iPhone nur in der App
-        auf dem Home-Bildschirm){% else %}per Mail (deine Adresse musst du zuerst über den Link in der Bestätigungsmail bestätigen){% endif %},</li>
+      {% if mail_enabled or push_enabled %}<li><strong>Benachrichtigungen</strong> einschalten (siehe <a href="#benachrichtigungen">Benachrichtigungen</a>),</li>{% endif %}
       <li>deine Buchungen im <strong>Kalender deines Handys</strong> abonnieren,</li>
       <li>dein <strong>Passwort</strong> ändern.</li>
     </ul>

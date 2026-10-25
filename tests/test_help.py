@@ -15,6 +15,9 @@ def test_help_page(client, login):
     assert 'href="/privacy">Datenschutz</a> (Link ganz unten' in html
     assert '<a href="#notiz">Eine Notiz zur Buchung</a>' in html
     assert '«Deine nächsten Buchungen» oben rechts einen kleinen Knopf' in html
+    # Mail is configured, push isn't: the notification section only talks about mail
+    assert 'ob du sie per Mail oder gar nicht bekommen willst' in html
+    assert 'Push' not in html and 'help/notifications.png' not in html
 
 
 def test_help_link_in_navigation(client, login):
@@ -22,10 +25,10 @@ def test_help_link_in_navigation(client, login):
     assert 'href="/help" class="">Hilfe</a>' in client.get('/').get_data(as_text=True)
 
 
-def test_help_screenshots_exist(client, login):
+def test_help_screenshots_exist(client, login, pushbox):
     login('bob')
     images = re.findall(r'<img src="([^"]+)"', client.get('/help').get_data(as_text=True))
-    assert len(images) == 9
+    assert len(images) == 10
     for src in images:
         r = client.get(src)
         assert r.status_code == 200 and r.mimetype == 'image/png'
@@ -42,3 +45,4 @@ def test_help_follows_settings_and_role(app, client, login):
     assert 'Als Admin kannst du auch fremde Buchungen stornieren' in html
     assert 'Ein Admin setzt dir ein neues Passwort.' in html
     assert 'Anmeldeseite' not in html
+    assert 'id="benachrichtigungen"' not in html  # neither mail nor push

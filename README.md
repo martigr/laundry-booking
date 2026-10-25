@@ -11,7 +11,10 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 
 <table>
   <tr>
-    <td width="32%" valign="top"><img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub></td>
+    <td width="32%" valign="top">
+      <img src="docs/screenshots/phone.png" alt="Week view on a phone"><br><sub>On the phone</sub><br><br>
+      <img src="docs/screenshots/notifications.png" alt="Notification settings with the push button"><br><sub>Notifications by mail and push</sub>
+    </td>
     <td valign="top">
       <img src="docs/screenshots/month.png" alt="Month overview"><br><sub>Month overview</sub><br><br>
       <img src="docs/screenshots/admin.png" alt="Admin area"><br><sub>Admin area</sub><br><br>

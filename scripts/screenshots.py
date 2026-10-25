@@ -15,6 +15,7 @@ half) and of week.png in site/index.html afterwards.
 """
 import argparse
 import io
+import json
 import os
 import sys
 import tempfile
@@ -29,7 +30,7 @@ from werkzeug.serving import make_server
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from laundry import create_app, slots  # noqa: E402
+from laundry import create_app, push, slots  # noqa: E402
 from laundry.cli import seed_demo_command  # noqa: E402
 from laundry.db import get_db  # noqa: E402
 from laundry.users import create_user  # noqa: E402
@@ -38,6 +39,17 @@ PORT = 5077
 BASE = f'http://127.0.0.1:{PORT}'
 HIGHLIGHT = '.hl { outline: 3px solid #FB923C !important; outline-offset: 3px; }'
 PASSWORD = 'screenshots'
+PUSH_ENDPOINT = 'https://fcm.googleapis.com/fcm/send/screenshots'
+
+# Headless Chromium has no push service: stand in for it, so the profile shows the push button.
+# The subscription "exists" when the server knows PUSH_ENDPOINT for the user (data-endpoints).
+FAKE_PUSH = """
+PushManager.prototype.getSubscription = async function () {
+  const box = document.getElementById('push-device');
+  const known = box ? JSON.parse(box.dataset.endpoints) : [];
+  return known.includes(ENDPOINT) ? {endpoint: ENDPOINT} : null;
+};
+""".replace('ENDPOINT', json.dumps(PUSH_ENDPOINT))
 
 
 def save(png, path):
@@ -71,10 +83,33 @@ def login(page, username, password=PASSWORD):
     page.mouse.move(0, 0)  # no hover effect on what was under the login button
 
 
+def push_page(browser, username, password=PASSWORD, **context):
+    """A logged-in page whose browser may show notifications and pretends to have a push service."""
+    ctx = browser.new_context(permissions=['notifications'], **context)
+    ctx.add_init_script(FAKE_PUSH)
+    page = ctx.new_page()
+    login(page, username, password)
+    return page
+
+
+def subscribe_device(con, user_id):
+    p256dh = 'B' + 'A' * 86  # never used: nothing is sent
+    con.execute('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) '
+                "VALUES (?, ?, ?, 'AAAAAAAAAAAAAAAAAAAAAA', '2026-10-01T12:00:00')", (user_id, PUSH_ENDPOINT, p256dh))
+
+
+def notifications_card(page):
+    page.goto(BASE + '/profile')
+    page.wait_for_selector('#push-toggle:not([hidden])')
+    return page.locator('form.card', has=page.locator('#push-device'))
+
+
 def run(prepare, shoot):
     """Serve a fresh app with the data from prepare(app) and call shoot(browser, app)."""
     with tempfile.TemporaryDirectory() as tmp:
-        app = create_app({'SECRET_KEY': 'screenshots', 'DATABASE': f'{tmp}/demo.db'})
+        # Mail and push on, so the profile and the help page show both (nothing is sent)
+        app = create_app({'SECRET_KEY': 'screenshots', 'DATABASE': f'{tmp}/demo.db', 'SMTP_HOST': 'smtp.invalid',
+                          'MAIL_FROM': 'waschkueche@example.ch', 'VAPID_PRIVATE_KEY': push.new_private_key()})
         with app.app_context():
             prepare(app)
         server = make_server('127.0.0.1', PORT, app)
@@ -110,7 +145,8 @@ README_BOOKINGS = {  # day of October 2026: (Vormittag, Nachmittag, Abend)
 AUDIT_ENTRIES = [  # oldest first: time, username, action, detail, address
     ('2026-10-21T07:42:10', 'sandra', 'login', '', '192.168.1.23'),
     ('2026-10-21T07:43:02', 'sandra', 'book', 'Sa 24. Okt. · Vormittag', '192.168.1.23'),
-    ('2026-10-21T12:15:47', 'marco', 'notifications', 'Erinnerung: 1 Stunde vorher, freie Slots: ja',
+    ('2026-10-21T12:14:05', 'marco', 'push_enabled', 'fcm.googleapis.com', '192.168.1.40'),
+    ('2026-10-21T12:15:47', 'marco', 'notifications', 'Erinnerung: 1 Stunde vorher (Mail + Push), freie Slots: Push',
      '192.168.1.40'),
     ('2026-10-21T18:05:33', None, 'login_failed', 'falsches Passwort', '192.168.1.17'),
     ('2026-10-21T18:05:51', 'bob', 'login', 'angemeldet bleiben', '192.168.1.17'),
@@ -147,6 +183,10 @@ def readme_data(app):
                 if owner:
                     con.execute('INSERT INTO reservations (day, slot, user_id, note) VALUES (?, ?, ?, ?)',
                                 (date(2026, 10, day).isoformat(), slot, ids[owner], README_NOTES.get((day, slot))))
+        # Marco: reminders by mail and push, freed slots by push, on this "phone"
+        con.execute('UPDATE users SET reminder_minutes = 60, reminder_mail = 1, reminder_push = 1, freed_push = 1 '
+                    'WHERE id = ?', (ids['marco'],))
+        subscribe_device(con, ids['marco'])
     readme_data.ids = ids
 
 
@@ -176,6 +216,11 @@ def readme_shots(browser, app):
     login(phone, 'bob')
     save(phone.screenshot(), README_DIR / 'phone.png')
 
+    phone = push_page(browser, 'marco', viewport={'width': 390, 'height': 844}, device_scale_factor=2,
+                      is_mobile=True, has_touch=True)
+    card = notifications_card(phone)
+    save(phone.screenshot(clip=union(card.bounding_box(), pad=8), full_page=True), README_DIR / 'notifications.png')
+
     admin = browser.new_page(viewport={'width': 1280, 'height': 720})
     login(admin, 'alice')
     admin.goto(BASE + '/admin')
@@ -202,6 +247,9 @@ def help_data(app):
     slots.now = lambda: HELP_NOW
     app.test_cli_runner().invoke(seed_demo_command)  # bob / password456, not in a household
     with get_db() as con:
+        # Bob: confirmed address, reminder by mail, freed slots by mail and push
+        con.execute("UPDATE users SET email = 'bob@example.ch', email_verified = 1, reminder_minutes = 60, "
+                    "reminder_mail = 1, notify_freed = 1, freed_push = 1 WHERE username = 'bob'")
         con.executemany('UPDATE reservations SET note = ? WHERE day = ? AND slot = ?',
                         [(note, day, slot) for (day, slot), note in HELP_NOTES.items()])
 
@@ -271,6 +319,15 @@ def help_shots(browser, app):
     login(page, 'bob', 'password456')
     save(page.screenshot(), HELP_DIR / 'phone.png')
     phone.close()
+
+    # Profile: the push button (not yet active on this phone) and the channels
+    page = push_page(browser, 'bob', 'password456', viewport={'width': 390, 'height': 844}, device_scale_factor=2,
+                     is_mobile=True, has_touch=True)
+    card = notifications_card(page)
+    page.add_style_tag(content=HIGHLIGHT)
+    mark(page, '#push-toggle, .channels')
+    save(page.screenshot(clip=union(card.bounding_box(), pad=8), full_page=True), HELP_DIR / 'notifications.png')
+    page.context.close()
 
 
 SETS = {'readme': (readme_data, readme_shots), 'help': (help_data, help_shots)}
