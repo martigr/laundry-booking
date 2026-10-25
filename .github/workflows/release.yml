@@ -2,6 +2,8 @@ name: Release
 
 # Pushing a tag vX.Y.Z (matching the version in pyproject.toml) runs the CI checks, publishes the
 # Docker image to ghcr.io/<owner>/laundry-booking (amd64 + arm64) and creates the GitHub release.
+# A pre-release tag such as v1.6.0-beta.1 (for trying a version on staging) gets only its exact image
+# tag, not X.Y, X or latest, and a GitHub release marked as pre-release.
 on:
   push:
     tags: ["v*.*.*"]
@@ -41,7 +43,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
-          # v1.2.3 -> 1.2.3, 1.2, 1 and latest
+          # v1.2.3 -> 1.2.3, 1.2, 1 and latest; v1.2.3-beta.1 -> only 1.2.3-beta.1 (the action
+          # skips the shorter patterns and latest for pre-releases)
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -64,4 +67,7 @@ jobs:
       - name: Create GitHub release with generated notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${flags[@]}"

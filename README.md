@@ -107,6 +107,8 @@ To use it with Docker Compose, replace `build: .` and `image: laundry-booking` i
 `docker-compose.yml` with `image: ghcr.io/martigr/laundry-booking:1`, then `docker compose up -d`.
 In the `docker run` example below, use `ghcr.io/martigr/laundry-booking:1` instead of building.
 The tag `1` follows all 1.x releases; pin a full version (`1.0.0`) to update only by hand.
+Pre-releases (e.g. `1.6.0-beta.1`, for a staging instance) are only published under their full
+version, so `1` and `latest` never get them.
 
 ### Plain `docker run`
 
