@@ -387,7 +387,8 @@ freed-slot mails and reset links only go to confirmed addresses, so a typo can't
 the account. Addresses that existed before the column was added count as confirmed (step in
 `init_db()`).
 
-Rules: reminders go out within `reminder_minutes` before the slot start; freed slots are
+Rules: reminders go out within `reminder_minutes` before the slot start; back-to-back slots of the
+same user on one day are one block with one reminder before its first slot; freed slots are
 announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled.
 Without `SMTP_HOST`/`MAIL_FROM` nothing is queued and the "Passwort vergessen?" link is hidden.
 Mail texts are plain text and German; links use `BASE_URL`, since the notifier has no request.

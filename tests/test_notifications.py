@@ -95,6 +95,32 @@ def test_day_before_reminder(app, client, login, mailbox, monkeypatch):
     assert [m[1] for m in mailbox] == ['Waschküche: morgen Vormittag (07:00 – 12:00)']
 
 
+def test_back_to_back_slots_get_one_reminder(app, client, login, mailbox, monkeypatch):
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', 60)
+    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    for hour in (6, 11, 16):              # within the hour before each slot
+        at(monkeypatch, 2026, 10, 16, hour, 30)
+        run(app)
+    assert len(mailbox) == 1
+    to, subject, body = mailbox[0]
+    assert subject == 'Waschküche: heute Vormittag + Nachmittag + Abend (07:00 – 22:00)'
+    assert 'Vormittag + Nachmittag + Abend (07:00 – 22:00 Uhr)' in body
+
+
+def test_separate_blocks_get_separate_reminders(app, client, login, mailbox, monkeypatch):
+    a = login('alice')
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Vormittag', 'csrf_token': a})
+    t = set_prefs(client, login, 'bob', 'bob@example.ch', 60)
+    for slot in ('Nachmittag', 'Abend'):
+        client.post('/book', data={'day': '2026-10-16', 'slot': slot, 'csrf_token': t})
+    client.post('/book', data={'day': '2026-10-17', 'slot': 'Vormittag', 'csrf_token': t})
+    for args in ((16, 11, 30), (16, 16, 30), (17, 6, 30)):
+        at(monkeypatch, 2026, 10, *args)
+        run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: heute Nachmittag + Abend (12:00 – 22:00)',
+                                       'Waschküche: heute Vormittag (07:00 – 12:00)']
+
+
 def test_freed_slot_notifies_subscribers(app, client, login, mailbox, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
     t = set_prefs(client, login, 'bob', 'bob@example.ch', freed=True)
