@@ -47,7 +47,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Privacy notice at `/privacy` (German, public), linked in the footer of every page: who runs the app,
   which data it keeps, who sees what, how long, the session cookie (the only cookie, so no cookie banner)
 - Mail notifications, each switched on per user in the profile: reminder before your own
-  booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
+  booking (30 min to 1 day ahead, one mail for back-to-back slots), "a slot became free" in the next 7 days, "forgot password";
   addresses are confirmed by a link first; every mail has a one-click unsubscribe link
 - Calendar subscription: your own bookings, or those of your whole household, as an iCal feed for the phone's calendar
   (iPhone, Android with ICSx⁵, Google Calendar); the secret link can be renewed or deleted in the profile
