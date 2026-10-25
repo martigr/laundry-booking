@@ -4,8 +4,9 @@ name: Release
 # Docker image to ghcr.io/<owner>/laundry-booking (amd64 + arm64) and creates the GitHub release.
 # A pre-release tag such as v1.6.0-beta.1 (for trying a version on staging) gets only its exact image
 # tag, not X.Y, X or latest, and a GitHub release marked as pre-release. Its notes are the message of
-# the tag if it is annotated (git tag -a v1.6.0-beta.1 -m "..."): generated notes only list merged PRs,
-# and a beta usually comes from a PR that isn't merged yet.
+# the tag if it is annotated (git tag -a --cleanup=verbatim v1.6.0-beta.1 -F notes.md; without
+# --cleanup=verbatim git drops Markdown headings as comments): generated notes only list merged PRs, and
+# a beta usually comes from a PR that isn't merged yet.
 on:
   push:
     tags: ["v*.*.*"]
@@ -83,4 +84,5 @@ jobs:
               fi
               ;;
           esac
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${notes[@]}" "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
+            "${notes[@]}" "${flags[@]}"
