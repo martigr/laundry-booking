@@ -112,6 +112,10 @@ def _queue_push(con, dedupe_key, user_id, title, body, url, tag, expires_at):
                expires_at, s['id'])
 
 
+def _when(day, now):
+    return 'heute' if day == now.date() else ('morgen' if day == now.date() + timedelta(days=1) else fmt_day(day))
+
+
 def _mail_to(user, switch):
     """Mail for this notification: switched on and a confirmed address."""
     return mail.is_configured() and user[switch] and user['email'] and user['email_verified']
@@ -164,9 +168,11 @@ def queue_freed_slots(con, freed, cancelled_by):
                         + _footer(u['id'], 'freed', '„Slot frei geworden“'))
                 _queue(con, f'{key}:{u["id"]}', u['email'], subject, body, expires_at=entries[-1][2])
             if _push_to(u, 'freed_push'):
-                times = ', '.join(slot_time(slot) for slot in names)
-                _queue_push(con, f'{key}:{u["id"]}', u['id'], subject,
-                            f'{times} Uhr. Wer zuerst bucht, wäscht.', url, key, entries[-1][2])
+                # Short title: the phone shows the app's name anyway and cuts long titles off
+                _queue_push(con, f'{key}:{u["id"]}', u['id'],
+                            f'{_when(day, now).capitalize()} {" + ".join(names)} {verb} frei',
+                            f'{fmt_day(day)}, {_spans(day, names)} Uhr. Wer zuerst bucht, wäscht.', url, key,
+                            entries[-1][2])
 
 
 def queue_due_reminders(con):
@@ -198,7 +204,7 @@ def queue_due_reminders(con):
             block.append(_next_slot(day, block[-1]))
         names = ' + '.join(block)
         hours = f'{slot_time(block[0]).split(" – ")[0]} – {slot_time(block[-1]).split(" – ")[1]}'
-        when = 'heute' if day == now.date() else ('morgen' if day == now.date() + timedelta(days=1) else fmt_day(day))
+        when = _when(day, now)
         url = link('/?week=' + day.isoformat())
         if _mail_to(r, 'reminder_mail'):
             body = (f'Hallo {r["display_name"]}\n\n'
@@ -210,7 +216,7 @@ def queue_due_reminders(con):
             _queue(con, f'reminder:{r["id"]}', r['email'],
                    f'Waschküche: {when} {names} ({hours})', body, expires_at=start)
         if _push_to(r, 'reminder_push'):
-            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Waschküche: {when} {names}',
+            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Erinnerung: {when} {names}',
                         f'{fmt_day(day)}, {hours} Uhr. Kommt etwas dazwischen? '
                         f'Storniere den Slot, damit andere ihn nutzen können.',
                         url, f'reminder:{r["id"]}', start)
@@ -226,6 +232,17 @@ def _next_slot(day, slot_name):
     """The slot that starts when this one ends, or None."""
     end = slot_bounds(day, slot_name)[1]
     return next((n for n in SLOT_NAMES if slot_bounds(day, n)[0] == end), None)
+
+
+def _spans(day, names):
+    """Times of slots in order, adjacent ones joined: '07:00 – 17:00' rather than '07:00 – 12:00, 12:00 – 17:00'."""
+    runs = []
+    for name in names:
+        if runs and _next_slot(day, runs[-1][-1]) == name:
+            runs[-1].append(name)
+        else:
+            runs.append([name])
+    return ', '.join(f'{slot_time(r[0]).split(" – ")[0]} – {slot_time(r[-1]).split(" – ")[1]}' for r in runs)
 
 
 def queue_password_reset(con, user):

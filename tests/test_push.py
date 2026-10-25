@@ -192,7 +192,7 @@ def test_reminder_by_push_only(app, client, login, mailbox, pushbox, monkeypatch
     assert mailbox == []
     assert sorted(e for e, _, _ in pushbox) == [ENDPOINT, ENDPOINT + '-tablet']
     endpoint, payload, ttl = pushbox[0]
-    assert payload['title'] == 'Waschküche: heute Abend'
+    assert payload['title'] == 'Erinnerung: heute Abend'
     assert payload['body'].startswith('Do 15. Okt., 17:00 – 22:00 Uhr.')
     assert payload['url'] == 'https://wk.test/?week=2026-10-15'
     assert ttl == 55 * 60  # until the slot starts
@@ -210,7 +210,7 @@ def test_back_to_back_slots_get_one_push(app, client, login, mailbox, pushbox, m
     for hour in (6, 11, 16):              # within the hour before each slot
         at(monkeypatch, 2026, 10, 16, hour, 30)
         run(app)
-    assert [p['title'] for _, p, _ in pushbox] == ['Waschküche: heute Vormittag + Nachmittag + Abend']
+    assert [p['title'] for _, p, _ in pushbox] == ['Erinnerung: heute Vormittag + Nachmittag + Abend']
     assert pushbox[0][1]['body'].startswith('Fr 16. Okt., 07:00 – 22:00 Uhr.')
 
 
@@ -223,7 +223,7 @@ def test_reminder_by_mail_and_push(app, client, login, mailbox, pushbox, monkeyp
     at(monkeypatch, 2026, 10, 15, 16, 5)
     assert run(app) == (2, 0)
     assert [m[1] for m in mailbox] == ['Waschküche: heute Abend (17:00 – 22:00)']
-    assert [p['title'] for _, p, _ in pushbox] == ['Waschküche: heute Abend']
+    assert [p['title'] for _, p, _ in pushbox] == ['Erinnerung: heute Abend']
 
 
 def test_push_needs_no_email(app, client, login, mailbox, pushbox, monkeypatch):
@@ -251,7 +251,8 @@ def test_freed_slot_by_push(app, client, login, mailbox, pushbox, query):
     run(app)
     assert mailbox == []
     assert [(e, p['title']) for e, p, _ in pushbox] == \
-        [(ENDPOINT, 'Waschküche: Fr 16. Okt. Vormittag + Nachmittag + Abend sind frei')]  # not to bob
+        [(ENDPOINT, 'Morgen Vormittag + Nachmittag + Abend sind frei')]  # not to bob
+    assert pushbox[0][1]['body'] == 'Fr 16. Okt., 07:00 – 22:00 Uhr. Wer zuerst bucht, wäscht.'
     assert pushbox[0][1]['url'] == 'https://wk.test/?week=2026-10-16'
 
 
@@ -438,7 +439,8 @@ def test_payload_is_json(app, client, login, pushbox, query):
     client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
     body, = query('SELECT body FROM notifications')[0]
-    assert json.loads(body)['title'] == 'Waschküche: Fr 16. Okt. Abend ist frei' and 'ü' in body
+    assert json.loads(body)['title'] == 'Morgen Abend ist frei'
+    assert 'Fr 16. Okt., 17:00 – 22:00 Uhr. Wer zuerst bucht, wäscht.' in body  # umlauts stay readable
 
 
 def test_help_and_privacy_mention_push_only_when_configured(app, client, login):
