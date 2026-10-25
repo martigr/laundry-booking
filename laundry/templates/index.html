@@ -42,7 +42,7 @@
         <form method="post" action="{{ url_for('bookings.book_day') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="day" value="{{ d.date.isoformat() }}">
-          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <input type="hidden" name="next" value="{{ request.script_root ~ request.full_path }}">
           <button type="submit" class="day-book" title="Alle freien Slots an diesem Tag buchen" aria-label="{{ d.date.isoformat() }} {{ d.book_day }} buchen">{{ d.book_day }}</button>
         </form>
         {% endif %}
@@ -85,7 +85,7 @@
           <form method="post" action="{{ url_for('bookings.cancel_many') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% for id in u.ids %}<input type="hidden" name="id" value="{{ id }}">{% endfor %}
-            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <input type="hidden" name="next" value="{{ request.script_root ~ request.full_path }}">
             <button type="submit" class="btn btn-small" aria-label="{{ u.label }} {{ u.name }} stornieren">Stornieren</button>
           </form>
         </li>

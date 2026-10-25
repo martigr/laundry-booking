@@ -236,7 +236,9 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 - State-changing actions are plain HTML form POSTs that answer with a redirect
   (Post/Redirect/Get). Exception: `/push/subscribe` and `/push/unsubscribe`, which `static/push.js` calls with
   `fetch` (form-encoded, with `csrf_token`) and which answer 204. Feedback goes through `flash(message, 'ok' | 'warn')`.
-- After book/cancel, `back_to_calendar()` returns to the form's `next` field. Only local
+- After book/cancel, `back_to_calendar()` returns to the form's `next` field. The templates fill it with
+  `request.script_root ~ request.full_path`: `full_path` alone lacks the prefix when a proxy mounts the app
+  below a path (`SCRIPT_NAME`, e.g. `/waschkueche`), and the redirect would leave the app. Only local
   paths are accepted; `//host`, anything with a backslash or a control character (browsers drop
   tabs and line breaks, so `/<tab>/host` would become `//host`) and absolute URLs fall back to `/`.
 - Dates from requests go through `slots.parse_day()`, which only accepts `MIN_DAY..MAX_DAY`
