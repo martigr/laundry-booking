@@ -85,7 +85,7 @@
     </div>
     <p class="hint">Aus Versehen storniert? Buche den Slot einfach nochmals, solange er frei ist.
       Vorbei ist vorbei: Slots, die schon zu Ende sind, lassen sich nicht mehr stornieren.
-      {% if mail_enabled %}Wer es im Profil eingeschaltet hat, bekommt eine Mail, wenn in den nächsten 7 Tagen ein Slot frei wird.{% endif %}</p>
+      {% if mail_enabled or push_enabled %}Wer es im Profil eingeschaltet hat, bekommt eine {{ 'Mail oder Push-Mitteilung' if mail_enabled and push_enabled else ('Mail' if mail_enabled else 'Push-Mitteilung') }}, wenn in den nächsten 7 Tagen ein Slot frei wird.{% endif %}</p>
     {% if g.user['is_admin'] %}
     <p class="hint">Als Admin kannst du auch fremde Buchungen stornieren. Dafür erscheint zuerst eine Rückfrage.</p>
     {% endif %}
@@ -145,8 +145,10 @@
     <p>Im <a href="{{ url_for('profile.index') }}">Profil</a> (Klick auf deinen Namen oben rechts) kannst du</p>
     <ul class="help-list">
       <li>den <strong>Anzeigenamen</strong> ändern, unter dem dich die anderen im Kalender sehen,</li>
-      <li><strong>Mails</strong> einschalten: eine Erinnerung vor deinen Buchungen und eine Nachricht, wenn ein Slot frei wird
-        (deine Adresse musst du zuerst über den Link in der Bestätigungsmail bestätigen),</li>
+      <li><strong>Benachrichtigungen</strong> einschalten: eine Erinnerung vor deinen Buchungen und eine Nachricht, wenn ein Slot frei wird,
+        je {% if push_enabled %}per Mail, per Push-Mitteilung oder beides (deine Mail-Adresse musst du zuerst über den Link in der
+        Bestätigungsmail bestätigen; Push schaltest du auf jedem Gerät mit «Push aktivieren» ein, auf dem iPhone nur in der App
+        auf dem Home-Bildschirm){% else %}per Mail (deine Adresse musst du zuerst über den Link in der Bestätigungsmail bestätigen){% endif %},</li>
       <li>deine Buchungen im <strong>Kalender deines Handys</strong> abonnieren,</li>
       <li>dein <strong>Passwort</strong> ändern.</li>
     </ul>

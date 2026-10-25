@@ -1,15 +1,18 @@
-"""Mail notifications.
+"""Notifications by mail and push.
 
 Everything goes through the `notifications` table (an outbox): views and the reminder scan only
-queue rows, `flask send-notifications` sends them. A request never waits for the mail server, a
-failed send is retried, and `dedupe_key` makes sure nobody gets the same mail twice.
+queue rows, `flask send-notifications` sends them. A request never waits for the mail server or a
+push service, a failed send is retried, and `dedupe_key` makes sure nobody gets the same message
+twice. Push messages have one row per device (`push_subscription_id`); their `body` is the JSON
+payload the service worker shows.
 """
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta
 
 from flask import current_app
 from itsdangerous import BadSignature, URLSafeSerializer, URLSafeTimedSerializer
 
-from . import mail, slots
+from . import mail, push, slots
 from .db import get_db
 from .slots import fmt_day, parse_day, slot_bounds, slot_time
 
@@ -26,6 +29,7 @@ RESET_INTERVAL = timedelta(minutes=15)  # at most one reset (or verification) ma
 VERIFY_VALID = timedelta(days=7)
 MAX_ATTEMPTS = 5
 KEEP_SENT = timedelta(days=30)
+PUSH_TTL = timedelta(days=1)  # how long a push service keeps a message for an offline device, if it doesn't expire
 
 
 # --- Links and tokens ------------------------------------------------------------------------
@@ -91,12 +95,30 @@ def read_verify_token(token):
 
 # --- Queueing --------------------------------------------------------------------------------
 
-def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None):
+def _queue(con, dedupe_key, to_addr, subject, body, expires_at=None, push_subscription_id=None):
     con.execute(
-        'INSERT OR IGNORE INTO notifications (dedupe_key, to_addr, subject, body, created_at, expires_at) '
-        'VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT OR IGNORE INTO notifications (dedupe_key, to_addr, subject, body, created_at, expires_at, '
+        'push_subscription_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
         (dedupe_key, to_addr, subject, body, slots.now().isoformat(timespec='seconds'),
-         expires_at.isoformat(timespec='seconds') if expires_at else None))
+         expires_at.isoformat(timespec='seconds') if expires_at else None, push_subscription_id))
+
+
+def _queue_push(con, dedupe_key, user_id, title, body, url, tag, expires_at):
+    """One row per device of the user, so each is retried on its own. `to_addr` is only the push
+    service's host (for the logs); the endpoint URL stays in push_subscriptions."""
+    payload = json.dumps({'title': title, 'body': body, 'url': url, 'tag': tag}, ensure_ascii=False)
+    for s in con.execute('SELECT id, endpoint FROM push_subscriptions WHERE user_id = ?', (user_id,)).fetchall():
+        _queue(con, f'{dedupe_key}:push:{s["id"]}', push.service_host(s['endpoint']), title, payload,
+               expires_at, s['id'])
+
+
+def _mail_to(user, switch):
+    """Mail for this notification: switched on and a confirmed address."""
+    return mail.is_configured() and user[switch] and user['email'] and user['email_verified']
+
+
+def _push_to(user, switch):
+    return push.is_configured() and user[switch]
 
 
 def _footer(user_id, kind, what):
@@ -108,10 +130,10 @@ def _footer(user_id, kind, what):
 def queue_freed_slots(con, freed, cancelled_by):
     """Bookings were cancelled: tell everyone who wants to know about freed slots.
 
-    `freed` is a list of (reservation_id, day, slot). Subscribers get one mail per day,
-    so cancelling a whole day doesn't send three mails.
+    `freed` is a list of (reservation_id, day, slot). Subscribers get one message per day and channel,
+    so cancelling a whole day doesn't send three.
     """
-    if not mail.is_configured():
+    if not (mail.is_configured() or push.is_configured()):
         return
     now = slots.now()
     by_day = {}
@@ -122,23 +144,29 @@ def queue_freed_slots(con, freed, cancelled_by):
     if not by_day:
         return
     users = con.execute("""
-        SELECT id, display_name, email FROM users
-        WHERE notify_freed = 1 AND email IS NOT NULL AND email != '' AND email_verified = 1 AND id != ?
+        SELECT id, display_name, email, email_verified, notify_freed, freed_push FROM users
+        WHERE (notify_freed = 1 OR freed_push = 1) AND id != ?
     """, (cancelled_by,)).fetchall()
     for day, entries in sorted(by_day.items()):
         entries.sort(key=lambda e: e[2])
         names = [slot for _, slot, _ in entries]
         lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
         verb = 'ist' if len(names) == 1 else 'sind'
+        subject = f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei'
+        url = link('/?week=' + day.isoformat())
+        key = f'freed:{entries[0][0]}'
         for u in users:
-            body = (f'Hallo {u["display_name"]}\n\n'
-                    f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
-                    f'Jetzt buchen: {link("/?week=" + day.isoformat())}\n\n'
-                    f'Wer zuerst bucht, wäscht.\n'
-                    + _footer(u['id'], 'freed', '„Slot frei geworden“'))
-            _queue(con, f'freed:{entries[0][0]}:{u["id"]}', u['email'],
-                   f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei', body,
-                   expires_at=entries[-1][2])
+            if _mail_to(u, 'notify_freed'):
+                body = (f'Hallo {u["display_name"]}\n\n'
+                        f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
+                        f'Jetzt buchen: {url}\n\n'
+                        f'Wer zuerst bucht, wäscht.\n'
+                        + _footer(u['id'], 'freed', '„Slot frei geworden“'))
+                _queue(con, f'{key}:{u["id"]}', u['email'], subject, body, expires_at=entries[-1][2])
+            if _push_to(u, 'freed_push'):
+                times = ', '.join(slot_time(slot) for slot in names)
+                _queue_push(con, f'{key}:{u["id"]}', u['id'], subject,
+                            f'{times} Uhr. Wer zuerst bucht, wäscht.', url, key, entries[-1][2])
 
 
 def queue_due_reminders(con):
@@ -146,9 +174,10 @@ def queue_due_reminders(con):
     now = slots.now()
     longest = max(m for m, _ in REMINDER_CHOICES)
     rows = con.execute("""
-        SELECT r.id, r.day, r.slot, u.id AS user_id, u.display_name, u.email, u.reminder_minutes
+        SELECT r.id, r.day, r.slot, u.id AS user_id, u.display_name, u.email, u.email_verified,
+               u.reminder_minutes, u.reminder_mail, u.reminder_push
         FROM reservations r JOIN users u ON u.id = r.user_id
-        WHERE u.reminder_minutes > 0 AND u.email IS NOT NULL AND u.email != '' AND u.email_verified = 1
+        WHERE u.reminder_minutes > 0 AND (u.reminder_mail = 1 OR u.reminder_push = 1)
           AND r.day BETWEEN ? AND ?
     """, (now.date().isoformat(), (now + timedelta(minutes=longest)).date().isoformat())).fetchall()
     for r in rows:
@@ -157,14 +186,21 @@ def queue_due_reminders(con):
         if not start - timedelta(minutes=r['reminder_minutes']) <= now < start:
             continue
         when = 'heute' if day == now.date() else ('morgen' if day == now.date() + timedelta(days=1) else fmt_day(day))
-        body = (f'Hallo {r["display_name"]}\n\n'
-                f'Erinnerung: Du hast die Waschküche {when} gebucht,\n'
-                f'{fmt_day(day)}, {r["slot"]} ({slot_time(r["slot"])} Uhr).\n\n'
-                f'Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können:\n'
-                f'{link("/?week=" + day.isoformat())}\n'
-                + _footer(r['user_id'], 'reminder', 'Erinnerungen'))
-        _queue(con, f'reminder:{r["id"]}', r['email'],
-               f'Waschküche: {when} {r["slot"]} ({slot_time(r["slot"])})', body, expires_at=start)
+        url = link('/?week=' + day.isoformat())
+        if _mail_to(r, 'reminder_mail'):
+            body = (f'Hallo {r["display_name"]}\n\n'
+                    f'Erinnerung: Du hast die Waschküche {when} gebucht,\n'
+                    f'{fmt_day(day)}, {r["slot"]} ({slot_time(r["slot"])} Uhr).\n\n'
+                    f'Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können:\n'
+                    f'{url}\n'
+                    + _footer(r['user_id'], 'reminder', 'Erinnerungen'))
+            _queue(con, f'reminder:{r["id"]}', r['email'],
+                   f'Waschküche: {when} {r["slot"]} ({slot_time(r["slot"])})', body, expires_at=start)
+        if _push_to(r, 'reminder_push'):
+            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Waschküche: {when} {r["slot"]}',
+                        f'{fmt_day(day)}, {slot_time(r["slot"])} Uhr. Kommt etwas dazwischen? '
+                        f'Storniere den Slot, damit andere ihn nutzen können.',
+                        url, f'reminder:{r["id"]}', start)
 
 
 def queue_password_reset(con, user):
@@ -203,22 +239,48 @@ def queue_email_verification(con, user):
 
 # --- Sending ---------------------------------------------------------------------------------
 
+def _push_ttl(n):
+    """Seconds the push service may hold the message for a device that is offline."""
+    if n['expires_at'] is None:
+        return PUSH_TTL.total_seconds()
+    return (datetime.fromisoformat(n['expires_at']) - slots.now()).total_seconds()
+
+
 def send_pending():
-    """Send queued mails. Returns (sent, failed)."""
+    """Send queued mails and push messages. Returns (sent, failed)."""
     con = get_db()
     now = slots.now().isoformat(timespec='seconds')
     rows = con.execute("""
-        SELECT * FROM notifications
-        WHERE sent_at IS NULL AND attempts < ? AND (expires_at IS NULL OR expires_at > ?)
-        ORDER BY id
+        SELECT n.*, s.endpoint, s.p256dh, s.auth FROM notifications n
+        LEFT JOIN push_subscriptions s ON s.id = n.push_subscription_id
+        WHERE n.sent_at IS NULL AND n.attempts < ? AND (n.expires_at IS NULL OR n.expires_at > ?)
+        ORDER BY n.id
     """, (MAX_ATTEMPTS, now)).fetchall()
+    mail_on, push_on = mail.is_configured(), push.is_configured()
     sent = failed = 0
+    gone = set()  # subscriptions deleted in this run; their other rows were fetched before
     for n in rows:
+        is_push = n['push_subscription_id'] is not None
+        if not (push_on if is_push else mail_on):  # switched off since it was queued: keep it for later
+            continue
+        if n['push_subscription_id'] in gone:
+            continue
         try:
-            mail.deliver(n['to_addr'], n['subject'], n['body'])
-        except Exception as e:  # any SMTP/network error: keep it queued and retry next run
+            if is_push:
+                push.deliver(n, n['body'], _push_ttl(n))
+            else:
+                mail.deliver(n['to_addr'], n['subject'], n['body'])
+        except push.Gone:
+            # The browser dropped the subscription; forget the device (and its queued messages)
             failed += 1
-            current_app.logger.warning('Mail %s to %s failed: %s', n['id'], n['to_addr'], e)
+            gone.add(n['push_subscription_id'])
+            current_app.logger.info('Push %s to %s: subscription gone, removed', n['id'], n['to_addr'])
+            with con:
+                con.execute('DELETE FROM push_subscriptions WHERE id = ?', (n['push_subscription_id'],))
+        except Exception as e:  # any SMTP/push/network error: keep it queued and retry next run
+            failed += 1
+            current_app.logger.warning('%s %s to %s failed: %s', 'Push' if is_push else 'Mail', n['id'],
+                                       n['to_addr'], e)
             with con:
                 con.execute('UPDATE notifications SET attempts = attempts + 1, last_error = ? WHERE id = ?',
                             (str(e)[:500], n['id']))
@@ -232,7 +294,7 @@ def send_pending():
 
 def run_once():
     """One pass of the notifier: queue due reminders, send everything pending, prune old rows."""
-    if not mail.is_configured():
+    if not (mail.is_configured() or push.is_configured()):
         return 0, 0
     con = get_db()
     with con:

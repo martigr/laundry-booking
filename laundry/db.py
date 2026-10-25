@@ -82,6 +82,17 @@ SCHEMA = [
     )
     """,
     'CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at)',
+    # Browsers that get push messages (push.py), one row per device; created by the button in the profile
+    """
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT UNIQUE NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
 ]
 
 # Columns added after the first release: (table, column, definition). Applied by init_db()
@@ -95,6 +106,13 @@ ADDED_COLUMNS = [
     ('users', 'calendar_token', 'TEXT'),  # secret of the calendar feed URL, NULL = no feed
     ('users', 'household_id', 'INTEGER REFERENCES households(id) ON DELETE SET NULL'),  # NULL = on their own
     ('reservations', 'note', 'TEXT'),  # short note for the others, NULL = none
+    # Channels of the notifications: reminders (when reminder_minutes > 0) by mail and/or push;
+    # freed slots by mail (notify_freed) and/or push
+    ('users', 'reminder_mail', 'INTEGER NOT NULL DEFAULT 1'),
+    ('users', 'reminder_push', 'INTEGER NOT NULL DEFAULT 0'),
+    ('users', 'freed_push', 'INTEGER NOT NULL DEFAULT 0'),
+    # Set on push messages in the outbox (NULL = mail); they go when the device unsubscribes
+    ('notifications', 'push_subscription_id', 'INTEGER REFERENCES push_subscriptions(id) ON DELETE CASCADE'),
 ]
 
 # audit_days: how long audit log entries are kept

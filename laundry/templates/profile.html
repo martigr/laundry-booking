@@ -23,7 +23,7 @@
   <form class="card" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="notifications">
-    <h2>Benachrichtigungen per E-Mail</h2>
+    <h2>Benachrichtigungen</h2>
     {% if not mail_enabled %}<p class="hint" style="margin:0">Der Mailversand ist noch nicht eingerichtet. Deine Einstellungen werden gespeichert und gelten, sobald er läuft.</p>{% endif %}
     <div class="field">
       <label for="email">E-Mail-Adresse</label>
@@ -34,6 +34,17 @@
         {% if mail_enabled %}<button type="submit" form="verify-form" class="linklike">Bestätigungsmail nochmals senden</button>{% endif %}</span>
       {% endif %}
     </div>
+    {% if push_enabled %}
+    <div class="field" id="push-device" data-key="{{ push_key }}" data-endpoints='{{ push_endpoints|tojson }}'
+         data-subscribe="{{ url_for('profile.push_subscribe') }}" data-unsubscribe="{{ url_for('profile.push_unsubscribe') }}">
+      <span class="field-label">Push-Mitteilungen auf diesem Gerät</span>
+      <div class="push-row">
+        <button type="button" class="btn" id="push-toggle" hidden>Push aktivieren</button>
+        <span class="hint" id="push-status" aria-live="polite"></span>
+      </div>
+      <span class="hint">Gilt nur für dieses Gerät (Handy, Computer). Auf dem iPhone geht Push nur, wenn du die Waschküche zum Home-Bildschirm hinzugefügt hast und sie von dort öffnest.</span>
+    </div>
+    {% endif %}
     <div class="field">
       <label for="reminder_minutes">Erinnerung an meine Buchungen</label>
       <select id="reminder_minutes" name="reminder_minutes">
@@ -41,8 +52,18 @@
         <option value="{{ minutes }}"{{ ' selected' if g.user['reminder_minutes'] == minutes }}>{{ label }}</option>
         {% endfor %}
       </select>
+      <div class="channels">
+        <label class="check"><input type="checkbox" name="reminder_mail" value="1"{{ ' checked' if g.user['reminder_mail'] }}>per Mail</label>
+        {% if push_enabled %}<label class="check"><input type="checkbox" name="reminder_push" value="1"{{ ' checked' if g.user['reminder_push'] }}>per Push</label>{% endif %}
+      </div>
     </div>
-    <label class="check"><input type="checkbox" name="notify_freed" value="1"{{ ' checked' if g.user['notify_freed'] }}>Mail, wenn in den nächsten 7 Tagen ein Slot frei wird</label>
+    <fieldset class="field">
+      <legend class="field-label">Wenn in den nächsten 7 Tagen ein Slot frei wird</legend>
+      <div class="channels">
+        <label class="check"><input type="checkbox" name="notify_freed" value="1"{{ ' checked' if g.user['notify_freed'] }}>per Mail</label>
+        {% if push_enabled %}<label class="check"><input type="checkbox" name="freed_push" value="1"{{ ' checked' if g.user['freed_push'] }}>per Push</label>{% endif %}
+      </div>
+    </fieldset>
     <div><button type="submit" class="btn btn-dark">Speichern</button></div>
   </form>
   <form id="verify-form" method="post" hidden>
@@ -118,4 +139,5 @@
   </form>
 </div>
 <script src="{{ url_for('static', filename='profile.js') }}" defer></script>
+{% if push_enabled %}<script src="{{ url_for('static', filename='push.js') }}" defer></script>{% endif %}
 {% endblock %}

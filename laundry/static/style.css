@@ -25,6 +25,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Classes like .btn set display, which would otherwise show elements with the hidden attribute */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); line-height: 1.4; }
 a { color: var(--accent); }
 a:hover { color: var(--accent-ink); }
@@ -84,7 +86,12 @@ h1, h2 { margin: 0; letter-spacing: -0.01em; }
 .segmented a.active { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(20, 32, 43, .08); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-size: 14px; font-weight: 700; }
+.field label, .field-label { font-size: 14px; font-weight: 700; }
+fieldset.field { border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset.field legend { padding: 0; margin-bottom: 6px; }
+.field .check { font-weight: 400; }
+.channels { display: flex; flex-wrap: wrap; column-gap: 24px; }
+.push-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .field input[type=text], .field input[type=password], .field input[type=number], .field input[type=email], .field select {
   height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface); width: 100%;
 }

@@ -13,7 +13,8 @@ NOW = datetime(2026, 10, 15, 14, 20)
 
 def set_prefs(client, login, username, email, minutes=0, freed=False, verified=True):
     t = login(username)
-    data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'csrf_token': t}
+    data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'reminder_mail': '1',
+            'csrf_token': t}
     if freed:
         data['notify_freed'] = '1'
     client.post('/profile', data=data)

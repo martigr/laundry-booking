@@ -46,9 +46,10 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - The app version is shown at the bottom of every page (when logged in)
 - Privacy notice at `/privacy` (German, public), linked in the footer of every page: who runs the app,
   which data it keeps, who sees what, how long, the session cookie (the only cookie, so no cookie banner)
-- Mail notifications, each switched on per user in the profile: reminder before your own
-  booking (30 min to 1 day ahead), "a slot became free" in the next 7 days, "forgot password";
-  addresses are confirmed by a link first; every mail has a one-click unsubscribe link
+- Notifications by mail and/or push, chosen per user in the profile: reminder before your own
+  booking (30 min to 1 day ahead), "a slot became free" in the next 7 days; plus "forgot password" by mail;
+  addresses are confirmed by a link first; every mail has a one-click unsubscribe link; push is switched on
+  per device with one button (Web Push, no third-party account)
 - Calendar subscription: your own bookings, or those of your whole household, as an iCal feed for the phone's calendar
   (iPhone, Android with ICSx⁵, Google Calendar); the secret link can be renewed or deleted in the profile
 - Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
@@ -88,7 +89,7 @@ This starts two containers from the same image and the same `/data` volume:
 
 - `web`: the app (Gunicorn) on port 5000
 - `notifier`: runs `flask --app laundry send-notifications --loop 60`, which queues due reminders and
-  sends all waiting mails once a minute. Without mail settings it just idles.
+  sends all waiting mails and push messages once a minute. Without mail and push settings it just idles.
 
 ### Prebuilt image
 
@@ -300,6 +301,32 @@ For local development, [Mailpit](https://mailpit.axllent.org/) catches all mails
 `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`, then `SMTP_HOST=localhost SMTP_PORT=1025
 SMTP_SECURITY=none MAIL_FROM=test@example.ch` and open http://localhost:8025.
 
+### Push notifications
+
+Residents can get reminders and "a slot became free" as push messages on their phone or computer, in
+addition to or instead of mails. It uses Web Push directly (no Firebase or other account). Create a key
+once and put it into `.env`:
+
+```bash
+docker compose run --rm web flask --app laundry gen-vapid-key   # prints VAPID_PRIVATE_KEY=...
+```
+
+```
+VAPID_PRIVATE_KEY=...        # keep it secret and keep it: a new key ends all existing push subscriptions
+VAPID_SUBJECT=mailto:verwaltung@example.ch   # optional, default mailto:MAIL_FROM (or BASE_URL)
+```
+
+Restart both containers. Under *Profil → Benachrichtigungen* each resident taps "Push aktivieren"
+on every device that should get messages and ticks "per Push" for the notifications they want.
+
+- Needs HTTPS with a valid certificate. Over plain HTTP the button doesn't appear.
+- iPhone/iPad (iOS 16.4 or later): only in the home screen app (see *Home screen app*), not in Safari.
+- The `notifier` container needs outbound HTTPS to the browsers' push services: `fcm.googleapis.com`
+  (Chrome, Edge on Android), `*.push.services.mozilla.com` (Firefox), `*.push.apple.com` (Safari) and
+  `*.notify.windows.com` (Edge on Windows). Only these hosts are accepted as push endpoints.
+- Messages are end-to-end encrypted; the push service only sees when a message goes to which device.
+- If you ever replace the key, residents tap "Push aktivieren" again.
+
 ### Calendar subscription
 
 Every resident can create a personal calendar link under *Profil → Kalender abonnieren*
@@ -343,11 +370,13 @@ residents log in there once more.
 | `PRIVACY_CONTACT` | – | How to reach them on `/privacy`: an e-mail address (linked as `mailto:`) or an `https://` URL |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `PUID`, `PGID` | `1000` | Docker only: user/group the app runs as and that owns `/data` |
-| `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails and the calendar link |
+| `BASE_URL` | `http://localhost:5000` | Public address, used for links in mails, push messages and the calendar link |
 | `SMTP_HOST`, `SMTP_PORT` | –, `587` | Mail server; mail is off while `SMTP_HOST` or `MAIL_FROM` is empty |
 | `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (port 465) or `none` (local test servers only) |
 | `SMTP_USER`, `SMTP_PASSWORD` | – | SMTP login |
 | `MAIL_FROM`, `MAIL_FROM_NAME` | –, `Waschküche` | Sender address and name |
+| `VAPID_PRIVATE_KEY` | – | Key for push notifications (`flask gen-vapid-key`); push is off while it is empty |
+| `VAPID_SUBJECT` | `mailto:` + `MAIL_FROM`, else `BASE_URL` | Contact for the push services (`mailto:` or `https:` URL) |
 
 ## Command line
 
@@ -355,7 +384,8 @@ residents log in there once more.
 flask --app laundry create-user <username> [--name "Display name"] [--admin]   # asks for the password
 flask --app laundry make-admin <username>
 flask --app laundry seed-demo                                                  # demo data, development only
-flask --app laundry send-notifications [--loop SECONDS]                        # queue reminders, send mails
+flask --app laundry send-notifications [--loop SECONDS]                        # queue reminders, send mails and pushes
+flask --app laundry gen-vapid-key                                              # new VAPID_PRIVATE_KEY for push
 flask --app laundry backup <file>                                              # consistent copy of the database
 ```
 

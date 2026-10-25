@@ -1,9 +1,10 @@
+import json
 import secrets
 from datetime import datetime
 
 import pytest
 
-from laundry import create_app, mail, slots
+from laundry import create_app, mail, push, slots
 from laundry.db import get_db
 from laundry.users import create_user
 
@@ -13,6 +14,8 @@ PASSWORD = 'secret1234'
 
 
 MAIL_CONFIG = {'SMTP_HOST': 'smtp.test', 'MAIL_FROM': 'waschkueche@example.ch', 'BASE_URL': 'https://wk.test'}
+VAPID_KEY = push.new_private_key()
+REAL_PUSH_DELIVER = push.deliver  # captured before the pushbox fixture replaces it
 
 
 @pytest.fixture
@@ -20,6 +23,16 @@ def mailbox(monkeypatch):
     """Mails 'sent' during the test as (to, subject, body); nothing reaches a real server."""
     sent = []
     monkeypatch.setattr(mail, 'deliver', lambda to, subject, body: sent.append((to, subject, body)))
+    return sent
+
+
+@pytest.fixture
+def pushbox(app, monkeypatch):
+    """Switches push on; push messages 'sent' during the test as (endpoint, payload dict, ttl)."""
+    app.config['VAPID_PRIVATE_KEY'] = VAPID_KEY
+    sent = []
+    monkeypatch.setattr(push, 'deliver',
+                        lambda sub, payload, ttl: sent.append((sub['endpoint'], json.loads(payload), ttl)))
     return sent
 
 
