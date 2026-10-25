@@ -202,6 +202,18 @@ def test_reminder_by_push_only(app, client, login, mailbox, pushbox, monkeypatch
     assert len(pushbox) == 2  # not twice
 
 
+def test_back_to_back_slots_get_one_push(app, client, login, mailbox, pushbox, monkeypatch):
+    t = login('bob')
+    save_prefs(client, t, minutes=60, reminder_push=True)
+    subscribe(client, t)
+    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    for hour in (6, 11, 16):              # within the hour before each slot
+        at(monkeypatch, 2026, 10, 16, hour, 30)
+        run(app)
+    assert [p['title'] for _, p, _ in pushbox] == ['Waschküche: heute Vormittag + Nachmittag + Abend']
+    assert pushbox[0][1]['body'].startswith('Fr 16. Okt., 07:00 – 22:00 Uhr.')
+
+
 def test_reminder_by_mail_and_push(app, client, login, mailbox, pushbox, monkeypatch):
     t = login('bob')
     save_prefs(client, t, minutes=60, reminder_mail=True, reminder_push=True, email='bob@example.ch')

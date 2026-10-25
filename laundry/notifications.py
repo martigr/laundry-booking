@@ -14,7 +14,7 @@ from itsdangerous import BadSignature, URLSafeSerializer, URLSafeTimedSerializer
 
 from . import mail, push, slots
 from .db import get_db
-from .slots import fmt_day, parse_day, slot_bounds, slot_time
+from .slots import SLOT_NAMES, fmt_day, parse_day, slot_bounds, slot_time
 
 REMINDER_CHOICES = [
     (0, 'Keine Erinnerung'),
@@ -170,7 +170,11 @@ def queue_freed_slots(con, freed, cancelled_by):
 
 
 def queue_due_reminders(con):
-    """Queue reminders for bookings that start within each user's chosen lead time."""
+    """Queue reminders for bookings that start within each user's chosen lead time.
+
+    Back-to-back slots of the same user on one day (e.g. a whole day) are one block: one reminder
+    (per channel) before the block starts, none for the slots that only continue it.
+    """
     now = slots.now()
     longest = max(m for m, _ in REMINDER_CHOICES)
     rows = con.execute("""
@@ -180,27 +184,48 @@ def queue_due_reminders(con):
         WHERE u.reminder_minutes > 0 AND (u.reminder_mail = 1 OR u.reminder_push = 1)
           AND r.day BETWEEN ? AND ?
     """, (now.date().isoformat(), (now + timedelta(minutes=longest)).date().isoformat())).fetchall()
+    # The query has all of a user's bookings on these days, so a block's neighbours are in here
+    owner = {(r['day'], r['slot']): r['user_id'] for r in rows}
     for r in rows:
         day = parse_day(r['day'])
         start = slot_bounds(day, r['slot'])[0]
+        if owner.get((r['day'], _previous_slot(day, r['slot']))) == r['user_id']:
+            continue  # continues a block, whose first slot gets the reminder
         if not start - timedelta(minutes=r['reminder_minutes']) <= now < start:
             continue
+        block = [r['slot']]
+        while owner.get((r['day'], _next_slot(day, block[-1]))) == r['user_id']:
+            block.append(_next_slot(day, block[-1]))
+        names = ' + '.join(block)
+        hours = f'{slot_time(block[0]).split(" – ")[0]} – {slot_time(block[-1]).split(" – ")[1]}'
         when = 'heute' if day == now.date() else ('morgen' if day == now.date() + timedelta(days=1) else fmt_day(day))
         url = link('/?week=' + day.isoformat())
         if _mail_to(r, 'reminder_mail'):
             body = (f'Hallo {r["display_name"]}\n\n'
                     f'Erinnerung: Du hast die Waschküche {when} gebucht,\n'
-                    f'{fmt_day(day)}, {r["slot"]} ({slot_time(r["slot"])} Uhr).\n\n'
+                    f'{fmt_day(day)}, {names} ({hours} Uhr).\n\n'
                     f'Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können:\n'
                     f'{url}\n'
                     + _footer(r['user_id'], 'reminder', 'Erinnerungen'))
             _queue(con, f'reminder:{r["id"]}', r['email'],
-                   f'Waschküche: {when} {r["slot"]} ({slot_time(r["slot"])})', body, expires_at=start)
+                   f'Waschküche: {when} {names} ({hours})', body, expires_at=start)
         if _push_to(r, 'reminder_push'):
-            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Waschküche: {when} {r["slot"]}',
-                        f'{fmt_day(day)}, {slot_time(r["slot"])} Uhr. Kommt etwas dazwischen? '
+            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Waschküche: {when} {names}',
+                        f'{fmt_day(day)}, {hours} Uhr. Kommt etwas dazwischen? '
                         f'Storniere den Slot, damit andere ihn nutzen können.',
                         url, f'reminder:{r["id"]}', start)
+
+
+def _previous_slot(day, slot_name):
+    """The slot that ends when this one starts, or None."""
+    start = slot_bounds(day, slot_name)[0]
+    return next((n for n in SLOT_NAMES if slot_bounds(day, n)[1] == start), None)
+
+
+def _next_slot(day, slot_name):
+    """The slot that starts when this one ends, or None."""
+    end = slot_bounds(day, slot_name)[1]
+    return next((n for n in SLOT_NAMES if slot_bounds(day, n)[0] == end), None)
 
 
 def queue_password_reset(con, user):
