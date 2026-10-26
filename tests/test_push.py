@@ -8,7 +8,7 @@ import requests
 from conftest import MAIL_CONFIG, NOW, REAL_PUSH_DELIVER, VAPID_KEY
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from test_notifications import after_hold, at, run, verify
+from test_notifications import after_hold, at, booked_earlier, run, verify
 
 from laundry import create_app, notifications, push, slots
 from laundry.db import get_db
@@ -245,7 +245,8 @@ def test_freed_slot_by_push(app, client, login, mailbox, pushbox, monkeypatch, q
     t = login('bob')
     save_prefs(client, t, freed_push=True)
     subscribe(client, t, ENDPOINT + '-bob')
-    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
     client.post('/cancel', data={'id': [rid for rid, in query('SELECT id FROM reservations')], 'csrf_token': t})
 
     after_hold(monkeypatch)
@@ -263,7 +264,8 @@ def test_slots_cancelled_one_by_one_give_one_message(app, client, login, mailbox
     verify(app, 'alice')
     subscribe(client, ta)
     t = login('bob')
-    client.post('/book-day', data={'day': '2026-10-20', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book-day', data={'day': '2026-10-20', 'csrf_token': t})
     ids = [rid for rid, in query('SELECT id FROM reservations ORDER BY id')]
     for minute, rid in zip((20, 21, 22), (ids[2], ids[0], ids[1]), strict=True):  # each within the hold
         at(monkeypatch, 2026, 10, 15, 14, minute)
@@ -278,11 +280,29 @@ def test_slots_cancelled_one_by_one_give_one_message(app, client, login, mailbox
 
     # A slot freed after the message went out gets its own message
     client.post('/book', data={'day': '2026-10-20', 'slot': 'Abend', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 14, 34)
     client.post(f'/cancel/{query("SELECT MAX(id) FROM reservations")[0][0]}', data={'csrf_token': t})
-    at(monkeypatch, 2026, 10, 15, 14, 27)
+    at(monkeypatch, 2026, 10, 15, 14, 37)
     assert run(app) == (2, 0)
     assert pushbox[-1][1]['title'] == 'Di 20. Okt. Abend ist frei'
     assert pushbox[-1][1]['tag'] != pushbox[0][1]['tag']  # doesn't replace the first one on the phone
+
+
+def test_slot_booked_again_is_left_out_of_the_push(app, client, login, pushbox, monkeypatch, query):
+    ta = login('alice')
+    save_prefs(client, ta, freed_push=True)
+    subscribe(client, ta)
+    t = login('bob')
+    with booked_earlier(monkeypatch):
+        client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    client.post('/cancel', data={'id': [rid for rid, in query('SELECT id FROM reservations')], 'csrf_token': t})
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+    after_hold(monkeypatch)
+    assert run(app) == (1, 0)
+    (_, payload, _), = pushbox
+    assert payload['title'] == 'Morgen Vormittag + Nachmittag sind frei'
+    assert payload['body'] == 'Fr 16. Okt., 07:00 – 17:00 Uhr. Wer zuerst bucht, wäscht.'
+    assert payload['tag'] == query('SELECT dedupe_key FROM notifications')[0][0]  # kept
 
 
 def test_freed_title_is_capitalized_only_at_the_start(app, client, login, pushbox, monkeypatch, query):
@@ -290,8 +310,9 @@ def test_freed_title_is_capitalized_only_at_the_start(app, client, login, pushbo
     save_prefs(client, ta, freed_push=True)
     subscribe(client, ta)
     t = login('bob')
-    for day in ('2026-10-15', '2026-10-16', '2026-10-21'):
-        client.post('/book', data={'day': day, 'slot': 'Abend', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        for day in ('2026-10-15', '2026-10-16', '2026-10-21'):
+            client.post('/book', data={'day': day, 'slot': 'Abend', 'csrf_token': t})
     for rid, in query('SELECT id FROM reservations'):
         client.post(f'/cancel/{rid}', data={'csrf_token': t})
     after_hold(monkeypatch)
@@ -306,10 +327,10 @@ def test_gone_subscription_is_removed(app, client, login, pushbox, monkeypatch, 
     subscribe(client, t)
     t = login('alice')
     subscribe(client, t, ENDPOINT + '-alice')
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
-    client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})  # bob gets it
-
-    client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+        client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    client.post(f'/cancel/{query("SELECT MIN(id) FROM reservations")[0][0]}', data={'csrf_token': t})  # bob gets it
     client.post(f'/cancel/{query("SELECT MAX(id) FROM reservations")[0][0]}', data={'csrf_token': t})
     assert query('SELECT COUNT(*) FROM notifications') == [(2,)]  # two days, same device
 
@@ -331,7 +352,8 @@ def test_failed_push_is_retried(app, client, login, pushbox, monkeypatch, query)
     save_prefs(client, ta, freed_push=True)
     subscribe(client, ta)
     tb = login('bob')
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': tb})
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': tb})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': tb})
 
     def broken(sub, payload, ttl):
@@ -346,12 +368,13 @@ def test_failed_push_is_retried(app, client, login, pushbox, monkeypatch, query)
     assert run(app) == (1, 0)
 
 
-def test_push_waits_while_switched_off(app, client, login, pushbox, query):
+def test_push_waits_while_switched_off(app, client, login, pushbox, monkeypatch, query):
     t = login('alice')
     save_prefs(client, t, freed_push=True)
     subscribe(client, t)
     tb = login('bob')
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': tb})
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': tb})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': tb})
     app.config['VAPID_PRIVATE_KEY'] = None
     assert run(app) == (0, 0)
@@ -477,13 +500,14 @@ def test_deleting_a_user_removes_their_devices(client, login, pushbox, query):
     assert query('SELECT COUNT(*) FROM push_subscriptions') == [(0,)]
 
 
-def test_payload_is_json(app, client, login, pushbox, query):
+def test_payload_is_json(app, client, login, pushbox, monkeypatch, query):
     """The service worker reads the body as JSON; umlauts stay readable."""
     ta = login('alice')
     save_prefs(client, ta, freed_push=True)
     subscribe(client, ta)
     t = login('bob')
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
     body, = query('SELECT body FROM notifications')[0]
     assert json.loads(body)['title'] == 'Morgen Abend ist frei'

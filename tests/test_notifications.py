@@ -1,5 +1,6 @@
 import smtplib
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 
 import pytest
@@ -37,6 +38,14 @@ def run(app):
 
 def at(monkeypatch, *args):
     monkeypatch.setattr(slots, 'now', lambda: datetime(*args))
+
+
+@contextmanager
+def booked_earlier(monkeypatch):
+    """Book at 14:00: cancelling a booking younger than FREED_MIN_BOOKED announces nothing."""
+    at(monkeypatch, 2026, 10, 15, 14, 0)
+    yield
+    monkeypatch.setattr(slots, 'now', lambda: NOW)
 
 
 def after_hold(monkeypatch):
@@ -130,8 +139,9 @@ def test_separate_blocks_get_separate_reminders(app, client, login, mailbox, mon
 def test_freed_slot_notifies_subscribers(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
     t = set_prefs(client, login, 'bob', 'bob@example.ch', freed=True)
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
-    client.post('/book', data={'day': '2026-11-05', 'slot': 'Abend', 'csrf_token': t})  # beyond 7 days
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+        client.post('/book', data={'day': '2026-11-05', 'slot': 'Abend', 'csrf_token': t})  # beyond 7 days
     for rid, in query('SELECT id FROM reservations'):
         client.post(f'/cancel/{rid}', data={'csrf_token': t})
 
@@ -144,7 +154,8 @@ def test_freed_slot_notifies_subscribers(app, client, login, mailbox, monkeypatc
 def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
     t = login('bob')
-    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
     ids = [rid for rid, in query('SELECT id FROM reservations')]
     assert len(ids) == 3
     client.post('/cancel', data={'id': ids, 'csrf_token': t})
@@ -157,10 +168,71 @@ def test_cancelling_a_whole_day_sends_one_mail(app, client, login, mailbox, monk
     assert '- Vormittag (07:00 – 12:00 Uhr)' in body and '- Abend (17:00 – 22:00 Uhr)' in body
 
 
+def test_cancelling_a_fresh_booking_announces_nothing(app, client, login, mailbox, monkeypatch, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
+    t = login('bob')
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Vormittag', 'csrf_token': t})
+    client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})  # Nachmittag + Abend at 14:20
+    at(monkeypatch, 2026, 10, 15, 14, 29, 59)
+    client.post('/cancel', data={'id': [rid for rid, in query('SELECT id FROM reservations')], 'csrf_token': t})
+    assert query('SELECT slots FROM notifications') == [('Vormittag',)]  # booked half an hour ago
+
+    at(monkeypatch, 2026, 10, 15, 14, 30)
+    client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 14, 39, 59)
+    client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
+    assert query('SELECT COUNT(*) FROM notifications') == [(1,)]
+    at(monkeypatch, 2026, 10, 15, 14, 40)
+    client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 14, 50)  # exactly FREED_MIN_BOOKED later
+    client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
+    run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: Fr 16. Okt. Vormittag ist frei']
+    at(monkeypatch, 2026, 10, 15, 14, 53)
+    run(app)
+    assert mailbox[-1][1] == 'Waschküche: Sa 17. Okt. Abend ist frei'
+
+
+def test_booking_from_before_the_column_is_announced(app, client, login, mailbox, monkeypatch, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
+    t = login('bob')
+    with app.app_context(), get_db() as con:  # created_at NULL
+        con.execute("INSERT INTO reservations (day, slot, user_id) VALUES ('2026-10-16', 'Abend', 2)")
+    client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
+    after_hold(monkeypatch)
+    run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: Fr 16. Okt. Abend ist frei']
+
+
+def test_slots_booked_again_are_left_out(app, client, login, mailbox, monkeypatch, query):
+    set_prefs(client, login, 'alice', 'alice@example.ch', freed=True)
+    t = login('bob')
+    with booked_earlier(monkeypatch):
+        client.post('/book-day', data={'day': '2026-10-16', 'csrf_token': t})
+        client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    client.post('/cancel', data={'id': [rid for rid, in query('SELECT id FROM reservations')], 'csrf_token': t})
+    at(monkeypatch, 2026, 10, 15, 14, 21)
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})  # cancelled by mistake
+    client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': t})
+    ta = login('alice')
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Nachmittag', 'csrf_token': ta})
+    client.post(f'/cancel/{query("SELECT MAX(id) FROM reservations")[0][0]}', data={'csrf_token': ta})
+    assert run(app) == (0, 0)  # not due yet, nothing dropped
+
+    after_hold(monkeypatch)
+    assert run(app) == (1, 0)  # nothing for the 17th, booked again
+    to, subject, body = mailbox[0]
+    assert subject == 'Waschküche: Fr 16. Okt. Vormittag + Nachmittag sind frei'  # Nachmittag free again
+    assert body.startswith('Hallo Alice\n') and '- Abend' not in body
+    assert query('SELECT slots, expires_at FROM notifications') == [('Vormittag+Nachmittag', '2026-10-16T12:00:00')]
+
+
 def test_unsubscribe_link(app, client, login, mailbox, monkeypatch, query):
     set_prefs(client, login, 'alice', 'alice@example.ch', 60, freed=True)
     t = login('bob')
-    client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
+    with booked_earlier(monkeypatch):
+        client.post('/book', data={'day': '2026-10-16', 'slot': 'Abend', 'csrf_token': t})
     client.post(f'/cancel/{query("SELECT id FROM reservations")[0][0]}', data={'csrf_token': t})
     after_hold(monkeypatch)
     run(app)
@@ -260,7 +332,7 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     con = sqlite3.connect(path)
     assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version, calendar_token, '
                        'household_id FROM users').fetchall() == [('bob', None, 0, 0, 0, None, None)]
-    assert con.execute('SELECT day, note FROM reservations').fetchall() == [('2026-10-16', None)]
+    assert con.execute('SELECT day, note, created_at FROM reservations').fetchall() == [('2026-10-16', None, None)]
     assert con.execute('SELECT COUNT(*) FROM households').fetchone() == (0,)
     assert con.execute("SELECT 1 FROM sqlite_master WHERE name = 'users_calendar_token'").fetchone() == (1,)
     assert con.execute('SELECT COUNT(*) FROM login_failures').fetchone() == (0,)

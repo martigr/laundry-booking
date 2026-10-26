@@ -25,6 +25,7 @@ REMINDER_CHOICES = [
 ]
 FREED_WINDOW = timedelta(days=7)   # only announce freed slots that start within this window
 FREED_HOLD = timedelta(minutes=2)  # freed slots of a day cancelled within this time go out as one message
+FREED_MIN_BOOKED = timedelta(minutes=10)  # cancelling a booking younger than this announces nothing
 RESET_VALID = timedelta(hours=1)
 RESET_INTERVAL = timedelta(minutes=15)  # at most one reset (or verification) mail per user in this time
 VERIFY_VALID = timedelta(days=7)
@@ -145,26 +146,29 @@ def _footer(user_id, kind, what):
 def queue_freed_slots(con, freed, cancelled_by):
     """Bookings were cancelled: tell everyone who wants to know about freed slots.
 
-    `freed` is a list of (reservation_id, day, slot). Subscribers get one message per day and channel
-    (mail, each push device), also when the slots are cancelled one after another: the message waits
-    FREED_HOLD, and slots freed meanwhile join it (_queue_freed()).
+    `freed` is a list of (day, slot, booked_at); booked_at is None for bookings made before it was
+    stored. Subscribers get one message per day and channel (mail, each push device), also when the
+    slots are cancelled one after another: the message waits FREED_HOLD, and slots freed meanwhile join
+    it (_queue_freed()). A booking cancelled within FREED_MIN_BOOKED announces nothing: the slot was
+    free a moment ago, so nobody missed it (a wrong click, the wrong day).
     """
     if not (mail.is_configured() or push.is_configured()):
         return
     now = slots.now()
     by_day = {}
-    for rid, day, slot in freed:
+    for day, slot, booked_at in freed:
+        if booked_at is not None and now - booked_at < FREED_MIN_BOOKED:
+            continue
         start = slot_bounds(day, slot)[0]
         if now < start <= now + FREED_WINDOW:
-            by_day.setdefault(day, []).append((rid, slot, start))
+            by_day.setdefault(day, []).append(slot)
     if not by_day:
         return
     users = con.execute("""
         SELECT id, display_name, email, email_verified, notify_freed, freed_push FROM users
         WHERE (notify_freed = 1 OR freed_push = 1) AND id != ?
     """, (cancelled_by,)).fetchall()
-    for day, entries in sorted(by_day.items()):
-        names = [slot for _, slot, _ in entries]
+    for day, names in sorted(by_day.items()):
         for u in users:
             if _mail_to(u, 'notify_freed'):
                 _queue_freed(con, u, day, names, 'mail', u['email'])
@@ -172,6 +176,26 @@ def queue_freed_slots(con, freed, cancelled_by):
                 for s in con.execute('SELECT id, endpoint FROM push_subscriptions WHERE user_id = ?',
                                      (u['id'],)).fetchall():
                     _queue_freed(con, u, day, names, f'push:{s["id"]}', push.service_host(s['endpoint']), s['id'])
+
+
+def _freed_text(user, day, names, tag=None):
+    """Subject and body of "slots are free again": a mail, or with `tag` a push payload.
+    `names` are in SLOT_NAMES order."""
+    verb = 'ist' if len(names) == 1 else 'sind'
+    url = link('/?week=' + day.isoformat())
+    if tag is None:
+        lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
+        subject = f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei'
+        body = (f'Hallo {user["display_name"]}\n\n'
+                f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
+                f'Jetzt buchen: {url}\n\n'
+                f'Wer zuerst bucht, wäscht.\n'
+                + _footer(user['id'], 'freed', '„Slot frei geworden“'))
+        return subject, body
+    # Short title: the phone shows the app's name anyway and cuts long titles off
+    subject = f'{_first_upper(_when(day, slots.now()))} {" + ".join(names)} {verb} frei'
+    return subject, _push_payload(subject, f'{fmt_day(day)}, {_spans(day, names)} Uhr. Wer zuerst bucht, wäscht.',
+                                  url, tag)
 
 
 def _queue_freed(con, user, day, names, channel, to_addr, push_subscription_id=None):
@@ -184,21 +208,8 @@ def _queue_freed(con, user, day, names, channel, to_addr, push_subscription_id=N
     if waiting:
         names = set(names) | set(waiting['slots'].split('+'))
     names = [n for n in SLOT_NAMES if n in names]
-    verb = 'ist' if len(names) == 1 else 'sind'
-    url = link('/?week=' + day.isoformat())
-    if push_subscription_id is None:
-        lines = ''.join(f'- {slot} ({slot_time(slot)} Uhr)\n' for slot in names)
-        subject = f'Waschküche: {fmt_day(day)} {" + ".join(names)} {verb} frei'
-        body = (f'Hallo {user["display_name"]}\n\n'
-                f'Am {fmt_day(day)} {verb} wieder frei:\n{lines}\n'
-                f'Jetzt buchen: {url}\n\n'
-                f'Wer zuerst bucht, wäscht.\n'
-                + _footer(user['id'], 'freed', '„Slot frei geworden“'))
-    else:
-        # Short title: the phone shows the app's name anyway and cuts long titles off
-        subject = f'{_first_upper(_when(day, now))} {" + ".join(names)} {verb} frei'
-        body = _push_payload(subject, f'{fmt_day(day)}, {_spans(day, names)} Uhr. Wer zuerst bucht, wäscht.',
-                             url, prefix + now.isoformat(timespec='seconds'))
+    tag = None if push_subscription_id is None else prefix + now.isoformat(timespec='seconds')
+    subject, body = _freed_text(user, day, names, tag)
     expires_at = slot_bounds(day, names[-1])[0]  # worth sending until the last of them starts
     send_after = now + FREED_HOLD
     if waiting:
@@ -208,6 +219,33 @@ def _queue_freed(con, user, day, names, channel, to_addr, push_subscription_id=N
     else:
         _queue(con, prefix + now.isoformat(timespec='seconds'), to_addr, subject, body, expires_at,
                push_subscription_id, '+'.join(names), send_after)
+
+
+def drop_rebooked_freed(con):
+    """Due freed-slot messages: leave out the slots that are booked again (a cancellation by mistake
+    booked back, or someone was quicker), and drop the message when none is left. Checked when the
+    message is due, not on booking, so a slot booked and cancelled again during FREED_HOLD stays in it."""
+    now = slots.now()
+    rows = con.execute('SELECT id, dedupe_key, body, slots, push_subscription_id FROM notifications '
+                       'WHERE slots IS NOT NULL AND sent_at IS NULL AND send_after <= ?',
+                       (now.isoformat(timespec='seconds'),)).fetchall()
+    for n in rows:
+        _, day, user_id = n['dedupe_key'].split(':')[:3]  # 'freed:<day>:<user id>:...'
+        booked = {r['slot'] for r in con.execute('SELECT slot FROM reservations WHERE day = ?', (day,))}
+        names = n['slots'].split('+')
+        free = [name for name in names if name not in booked]
+        if free == names:
+            continue
+        user = con.execute('SELECT id, display_name FROM users WHERE id = ?', (int(user_id),)).fetchone()
+        if not free or user is None:
+            con.execute('DELETE FROM notifications WHERE id = ?', (n['id'],))
+            continue
+        day = parse_day(day)
+        tag = None if n['push_subscription_id'] is None else json.loads(n['body'])['tag']
+        subject, body = _freed_text(user, day, free, tag)
+        con.execute('UPDATE notifications SET subject = ?, body = ?, slots = ?, expires_at = ? WHERE id = ?',
+                    (subject, body, '+'.join(free), slot_bounds(day, free[-1])[0].isoformat(timespec='seconds'),
+                     n['id']))
 
 
 def queue_due_reminders(con):
@@ -371,12 +409,14 @@ def send_pending():
 
 
 def run_once():
-    """One pass of the notifier: queue due reminders, send everything pending, prune old rows."""
+    """One pass of the notifier: queue due reminders, drop rebooked slots from freed-slot messages, send
+    everything pending, prune old rows."""
     if not (mail.is_configured() or push.is_configured()):
         return 0, 0
     con = get_db()
     with con:
         queue_due_reminders(con)
+        drop_rebooked_freed(con)
         con.execute('DELETE FROM notifications WHERE created_at < ?',
                     ((slots.now() - KEEP_SENT).isoformat(timespec='seconds'),))
     return send_pending()

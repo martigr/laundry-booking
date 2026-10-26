@@ -298,7 +298,9 @@ BASE_URL=https://waschkueche.example.ch
 
 Any other SMTP provider works the same way. Mails are queued in the database and sent by the
 `notifier`; if the mail server is unreachable they are retried (up to 5 times) and dropped once
-they are no longer relevant (e.g. a reminder after the slot started). Residents enter their address
+they are no longer relevant (e.g. a reminder after the slot started). A freed slot is announced
+only when its booking was at least 10 minutes old and the slot is still free after a 2-minute wait,
+so a wrong click or a cancellation booked back right away stays quiet. Residents enter their address
 and choose their notifications under *Profil*; they get mails only after confirming the address
 with the link in the first mail; the "Passwort vergessen?" link on the login page
 only appears when mail is configured.

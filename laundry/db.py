@@ -106,6 +106,7 @@ ADDED_COLUMNS = [
     ('users', 'calendar_token', 'TEXT'),  # secret of the calendar feed URL, NULL = no feed
     ('users', 'household_id', 'INTEGER REFERENCES households(id) ON DELETE SET NULL'),  # NULL = on their own
     ('reservations', 'note', 'TEXT'),  # short note for the others, NULL = none
+    ('reservations', 'created_at', 'TEXT'),  # when it was booked, NULL = before this was stored
     # Channels of the notifications: reminders (when reminder_minutes > 0) by mail and/or push;
     # freed slots by mail (notify_freed) and/or push
     ('users', 'reminder_mail', 'INTEGER NOT NULL DEFAULT 1'),
