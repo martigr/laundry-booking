@@ -86,7 +86,9 @@
     </div>
     <p class="hint">Aus Versehen storniert? Buche den Slot einfach nochmals, solange er frei ist.
       Vorbei ist vorbei: Slots, die schon zu Ende sind, lassen sich nicht mehr stornieren.
-      {% if mail_enabled or push_enabled %}Wer es im Profil eingeschaltet hat, bekommt eine {{ 'Mail oder Push-Mitteilung' if mail_enabled and push_enabled else ('Mail' if mail_enabled else 'Push-Mitteilung') }}, wenn in den nächsten 7 Tagen ein Slot frei wird.{% endif %}</p>
+      {% if mail_enabled or push_enabled %}Wer es im Profil eingeschaltet hat, bekommt eine {{ 'Mail oder Push-Mitteilung' if mail_enabled and push_enabled else ('Mail' if mail_enabled else 'Push-Mitteilung') }}, wenn in den nächsten 7 Tagen ein Slot frei wird.
+      Keine Mitteilung geht raus, wenn du eine Buchung in den ersten 10 Minuten stornierst oder einen stornierten Slot
+      innerhalb von 2 Minuten nochmals buchst.{% endif %}</p>
     {% if g.user['is_admin'] %}
     <p class="hint">Als Admin kannst du auch fremde Buchungen stornieren. Dafür erscheint zuerst eine Rückfrage.</p>
     {% endif %}

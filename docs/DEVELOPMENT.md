@@ -145,7 +145,8 @@ username      TEXT UNIQUE (lowercase)   day       TEXT  ISO date 'YYYY-MM-DD'
 password      TEXT  werkzeug hash       slot      TEXT  one of SLOTS names
 display_name  TEXT  shown in calendar   user_id   INTEGER → users.id ON DELETE CASCADE
 is_admin      INTEGER 0/1               note      TEXT  shown to everyone, max. 80 chars, NULL = none
-email         TEXT  optional              UNIQUE (day, slot)
+email         TEXT  optional            created_at TEXT  when it was booked, NULL = older
+                                          UNIQUE (day, slot)
 email_verified INTEGER 0/1  mails only go out when 1
 reminder_minutes INTEGER 0 = off, else lead time of the reminder
 reminder_mail INTEGER 0/1  reminder by mail (default 1)
@@ -401,12 +402,16 @@ All of it goes through the `notifications` table (outbox pattern):
 1. Something queues a row: `bookings.cancel_reservations()` calls `queue_freed_slots()` (one message per day,
    subscriber and channel, also when a whole day is cancelled: the message waits `FREED_HOLD` (2 min,
    `send_after`), and slots of the same day cancelled meanwhile are added to it and restart the wait
-   (`_queue_freed()`), so cancelling slot by slot doesn't send one message each), `auth.forgot_password()`
+   (`_queue_freed()`), so cancelling slot by slot doesn't send one message each; slots whose booking is
+   younger than `FREED_MIN_BOOKED` (10 min, `reservations.created_at`) are left out, as they were free a
+   moment ago), `auth.forgot_password()`
    calls `queue_password_reset()`, and `run_once()` calls `queue_due_reminders()`.
    `dedupe_key` is UNIQUE and inserts use `INSERT OR IGNORE`, so a message is queued at most once.
    Push messages get one row per device of the user (`_queue_push()`), so each device is retried on its own.
 2. `flask send-notifications` (`--loop 60` in the `notifier` container) runs `run_once()`: queue due
-   reminders, send unsent rows that haven't expired, retry failures up to `MAX_ATTEMPTS`, delete
+   reminders, drop the slots that are booked again from due freed-slot messages and the messages left
+   without slots (`drop_rebooked_freed()`: a cancellation by mistake booked back within `FREED_HOLD`, or
+   someone was quicker), send unsent rows that haven't expired, retry failures up to `MAX_ATTEMPTS`, delete
    rows older than 30 days. Rows of a channel that is no longer configured wait.
 
 Why: a request never waits for the mail server or a push service, an outage only delays messages, and with
@@ -449,7 +454,9 @@ the account. Addresses that existed before the column was added count as confirm
 
 Rules: reminders go out within `reminder_minutes` before the slot start; back-to-back slots of the
 same user on one day are one block with one reminder before its first slot; freed slots are
-announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled.
+announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled,
+not when the booking was younger than 10 minutes (`FREED_MIN_BOOKED`), and not when the slot is booked
+again before the message goes out.
 Without `SMTP_HOST`/`MAIL_FROM` no mail is queued and the "Passwort vergessen?" link is hidden; without
 `VAPID_PRIVATE_KEY` no push. Mail and push texts are German; links use `BASE_URL`, since the notifier has no request.
 

@@ -1,7 +1,7 @@
 """Week and month views, booking and cancelling."""
 import sqlite3
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
@@ -263,8 +263,8 @@ def book():
         try:
             # UNIQUE (day, slot) decides who was first, also for simultaneous clicks
             with get_db() as con:
-                con.execute('INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?)',
-                            (day.isoformat(), slot, g.user['id']))
+                con.execute('INSERT INTO reservations (day, slot, user_id, created_at) VALUES (?, ?, ?, ?)',
+                            (day.isoformat(), slot, g.user['id'], current.isoformat(timespec='seconds')))
                 audit.record(con, 'book', label)
             flash(f'Gebucht: {label}', 'ok')
         except sqlite3.IntegrityError:
@@ -290,8 +290,9 @@ def book_day():
         with get_db() as con:
             # One transaction; UNIQUE (day, slot) skips slots that are already booked
             booked = [name for name in open_slots if con.execute(
-                'INSERT INTO reservations (day, slot, user_id) VALUES (?, ?, ?) ON CONFLICT (day, slot) DO NOTHING',
-                (day.isoformat(), name, g.user['id'])).rowcount]
+                'INSERT INTO reservations (day, slot, user_id, created_at) VALUES (?, ?, ?, ?) '
+                'ON CONFLICT (day, slot) DO NOTHING',
+                (day.isoformat(), name, g.user['id'], current.isoformat(timespec='seconds'))).rowcount]
             # Slots of housemates count as already booked by us, not as taken
             others = [r['slot'] for r in con.execute(
                 'SELECT slot, user_id FROM reservations WHERE day = ?', (day.isoformat(),))
@@ -346,8 +347,9 @@ def cancel_reservations(ids):
         else:
             audit.record(con, 'cancel', summary)
         con.executemany('DELETE FROM reservations WHERE id = ?', [(r['id'],) for r in rows])
-        notifications.queue_freed_slots(con, [(r['id'], parse_day(r['day']), r['slot']) for r in rows],
-                                        cancelled_by=g.user['id'])
+        notifications.queue_freed_slots(
+            con, [(parse_day(r['day']), r['slot'], r['created_at'] and datetime.fromisoformat(r['created_at']))
+                  for r in rows], cancelled_by=g.user['id'])
     flash('Storniert: ' + summary, 'ok')
 
 
