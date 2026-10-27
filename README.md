@@ -57,7 +57,7 @@ Whoever is first gets the slot; if something doesn't fit, people talk to each ot
 - Calendar subscription: your own bookings, or those of your whole household, as an iCal feed for the phone's calendar
   (iPhone, Android with ICSx⁵, Google Calendar); the secret link can be renewed or deleted in the profile
 - Security: CSRF protection on all forms, login throttling, strict security headers (CSP),
-  sessions end on password change; see [SECURITY.md](SECURITY.md)
+  `noindex` for search engines, sessions end on password change; see [SECURITY.md](SECURITY.md)
 - German UI
 
 ## Quick start (development)

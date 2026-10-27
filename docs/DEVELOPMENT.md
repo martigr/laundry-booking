@@ -485,7 +485,9 @@ Without `SMTP_HOST`/`MAIL_FROM` no mail is queued and the "Passwort vergessen?" 
   `style-src` allows inline `style=""` attributes; `frame-ancestors 'none'`, `form-action 'self'`),
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (tokens
   in reset/unsubscribe URLs), `Cache-Control: no-store` except for static files and `/sw.js`
-  (`no-cache`), and HSTS when the request came over HTTPS. JavaScript goes into files in `static/`.
+  (`no-cache`), `X-Robots-Tag: noindex, nofollow` (no search engine listings, also for
+  `security.txt` and `/privacy` with their contact addresses; spam harvesters ignore it), and HSTS
+  when the request came over HTTPS. JavaScript goes into files in `static/`.
 - **Limits:** `MAX_CONTENT_LENGTH` = 64 KB (413 above), passwords 10–128 characters
   (`users.check_password()`, also for `ADMIN_PASSWORD`), dates 2000–2999.
 - **Escaping:** Jinja autoescape covers HTML. Confirmation texts go into plain `data-confirm*`

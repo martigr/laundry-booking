@@ -22,6 +22,8 @@ def add_headers(response):
     h.setdefault('Referrer-Policy', 'no-referrer')
     h.setdefault('Cross-Origin-Opener-Policy', 'same-origin')
     h.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    # A private building's app: keep every page, feed and file out of search results
+    h.setdefault('X-Robots-Tag', 'noindex, nofollow')
     if request.is_secure:  # behind a proxy only with TRUSTED_PROXIES set, see README
         h.setdefault('Strict-Transport-Security', 'max-age=31536000')
     if request.endpoint != 'static':
