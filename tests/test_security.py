@@ -28,6 +28,7 @@ def test_security_headers(client, login):
     assert h['X-Content-Type-Options'] == 'nosniff'
     assert h['Referrer-Policy'] == 'no-referrer'
     assert h['Cache-Control'] == 'no-store'
+    assert h['X-Robots-Tag'] == 'noindex, nofollow'
     assert 'Strict-Transport-Security' not in h  # plain http
 
 
@@ -39,6 +40,12 @@ def test_static_files_stay_cacheable(client):
     r = client.get('/static/style.css')
     assert r.headers.get('Cache-Control') != 'no-store'
     assert r.headers['X-Content-Type-Options'] == 'nosniff'
+
+
+@pytest.mark.parametrize('url', ['/login', '/privacy', '/.well-known/security.txt', '/static/style.css', '/sw.js',
+                                 '/does-not-exist'])
+def test_public_responses_are_noindex(client, url):
+    assert client.get(url).headers['X-Robots-Tag'] == 'noindex, nofollow'
 
 
 def test_no_inline_scripts(client, login):
