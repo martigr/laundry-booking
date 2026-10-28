@@ -25,6 +25,13 @@ def channels(by_mail, by_push):
     return ' + '.join(name for name, on in (('Mail', by_mail), ('Push', by_push)) if on) or 'aus'
 
 
+def housemates():
+    """Display names of the other members of the user's household."""
+    return [r['display_name'] for r in get_db().execute(
+        'SELECT display_name FROM users WHERE household_id = ? AND id != ? ORDER BY display_name COLLATE NOCASE',
+        (g.user['household_id'], g.user['id']))]
+
+
 @bp.route('/profile', methods=['GET', 'POST'])
 @login_required
 def index():
@@ -32,15 +39,12 @@ def index():
         token = g.user['calendar_token']
         household = get_db().execute('SELECT name FROM households WHERE id = ?',
                                      (g.user['household_id'],)).fetchone()
-        housemates = [r['display_name'] for r in get_db().execute(
-            'SELECT display_name FROM users WHERE household_id = ? AND id != ? ORDER BY display_name COLLATE NOCASE',
-            (g.user['household_id'], g.user['id']))]
         push_endpoints = [r['endpoint'] for r in get_db().execute(
             'SELECT endpoint FROM push_subscriptions WHERE user_id = ?', (g.user['id'],))]
         return render_template('profile.html', min_pw=MIN_PASSWORD_LENGTH, max_name=MAX_NAME_LENGTH,
                                reminder_choices=REMINDER_CHOICES, push_endpoints=push_endpoints,
                                push_key=push.public_key() if push.is_configured() else None,
-                               household=household and household['name'], housemates=housemates,
+                               household=household and household['name'], housemates=housemates(),
                                feed_url=ical.feed_url(token) if token else None,
                                webcal_url=ical.webcal_url(token) if token else None)
 
@@ -72,13 +76,20 @@ def index():
             reminder_push, freed_push = bool(request.form.get('reminder_push')), bool(request.form.get('freed_push'))
         else:  # the form has no push boxes then; keep the choice for when push comes back
             reminder_push, freed_push = bool(g.user['reminder_push']), bool(g.user['freed_push'])
+        has_housemates = bool(housemates())
+        if has_housemates:
+            reminder_household = bool(request.form.get('reminder_household'))
+        else:  # the form has no household box then; keep the choice for when the user gets housemates
+            reminder_household = bool(g.user['reminder_household'])
         with get_db() as con:
             con.execute('UPDATE users SET email = ?, reminder_minutes = ?, reminder_mail = ?, reminder_push = ?, '
-                        'notify_freed = ?, freed_push = ? WHERE id = ?',
-                        (email, minutes, int(reminder_mail), int(reminder_push), int(notify_freed),
-                         int(freed_push), g.user['id']))
+                        'reminder_household = ?, notify_freed = ?, freed_push = ? WHERE id = ?',
+                        (email, minutes, int(reminder_mail), int(reminder_push), int(reminder_household),
+                         int(notify_freed), int(freed_push), g.user['id']))
             audit.record(con, 'notifications', f'Erinnerung: {dict(REMINDER_CHOICES)[minutes]}'
-                         + (f' ({channels(reminder_mail, reminder_push)})' if minutes else '')
+                         + (f' ({channels(reminder_mail, reminder_push)}'
+                            + (', auch für den Haushalt' if reminder_household and has_housemates else '') + ')'
+                            if minutes else '')
                          + f', freie Slots: {channels(notify_freed, freed_push)}'
                          + (f', neue Adresse: {email or "keine"}' if changed else ''))
             if changed:

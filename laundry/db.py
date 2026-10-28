@@ -112,6 +112,8 @@ ADDED_COLUMNS = [
     ('users', 'reminder_mail', 'INTEGER NOT NULL DEFAULT 1'),
     ('users', 'reminder_push', 'INTEGER NOT NULL DEFAULT 0'),
     ('users', 'freed_push', 'INTEGER NOT NULL DEFAULT 0'),
+    # Reminders also of the bookings of the user's housemates (users.household_id), not only their own
+    ('users', 'reminder_household', 'INTEGER NOT NULL DEFAULT 0'),
     # Set on push messages in the outbox (NULL = mail); they go when the device unsubscribes
     ('notifications', 'push_subscription_id', 'INTEGER REFERENCES push_subscriptions(id) ON DELETE CASCADE'),
     # Freed-slot messages: the slot names ('Vormittag+Abend'), so later cancellations can join a waiting

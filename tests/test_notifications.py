@@ -7,17 +7,20 @@ import pytest
 
 from laundry import create_app, mail, notifications, slots
 from laundry.db import get_db
+from laundry.users import create_user
 
 REAL_DELIVER = mail.deliver  # captured before the mailbox fixture replaces it
 NOW = datetime(2026, 10, 15, 14, 20)
 
 
-def set_prefs(client, login, username, email, minutes=0, freed=False, verified=True):
+def set_prefs(client, login, username, email, minutes=0, freed=False, verified=True, household=False):
     t = login(username)
     data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'reminder_mail': '1',
             'csrf_token': t}
     if freed:
         data['notify_freed'] = '1'
+    if household:
+        data['reminder_household'] = '1'
     client.post('/profile', data=data)
     if verified:
         verify(client.application, username)
@@ -29,6 +32,17 @@ def verify(app, username):
     with app.app_context(), get_db() as con:
         con.execute('UPDATE users SET email_verified = 1 WHERE username = ?', (username,))
         con.execute("DELETE FROM notifications WHERE dedupe_key LIKE 'verify:%'")
+
+
+def household(app, *usernames):
+    """Put the users into one new household, creating the ones that don't exist."""
+    with app.app_context():
+        for name in usernames:
+            if not get_db().execute('SELECT 1 FROM users WHERE username = ?', (name,)).fetchone():
+                create_user(name, 'secret1234', name.capitalize())
+        with get_db() as con:
+            hid = con.execute("INSERT INTO households (name) VALUES ('WG')").lastrowid
+            con.executemany('UPDATE users SET household_id = ? WHERE username = ?', [(hid, n) for n in usernames])
 
 
 def run(app):
@@ -134,6 +148,77 @@ def test_separate_blocks_get_separate_reminders(app, client, login, mailbox, mon
         run(app)
     assert [m[1] for m in mailbox] == ['Waschküche: heute Nachmittag + Abend (12:00 – 22:00)',
                                        'Waschküche: heute Vormittag (07:00 – 12:00)']
+
+
+def test_reminders_of_housemates_bookings_on_request(app, client, login, mailbox, monkeypatch):
+    household(app, 'bob', 'carol')
+    b = login('bob')
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Vormittag', 'csrf_token': b})
+    c = set_prefs(client, login, 'carol', 'carol@example.ch', 60)
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Nachmittag', 'csrf_token': c})
+    set_prefs(client, login, 'alice', 'alice@example.ch', 60, household=True)  # not in the household
+
+    at(monkeypatch, 2026, 10, 16, 6, 30)
+    run(app)
+    assert mailbox == []                  # Bob's booking: Carol only wants her own
+    at(monkeypatch, 2026, 10, 16, 11, 30)
+    run(app)
+    assert [m[:2] for m in mailbox] == [('carol@example.ch', 'Waschküche: heute Nachmittag (12:00 – 17:00)')]
+    assert 'Du hast die Waschküche heute gebucht' in mailbox[0][2]
+
+
+def test_housemates_bookings_join_the_block(app, client, login, mailbox, monkeypatch):
+    household(app, 'bob', 'carol')
+    b = login('bob')
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Vormittag', 'csrf_token': b})
+    client.post('/book', data={'day': '2026-10-17', 'slot': 'Abend', 'csrf_token': b})
+    c = set_prefs(client, login, 'carol', 'carol@example.ch', 60, household=True)
+    client.post('/book', data={'day': '2026-10-16', 'slot': 'Nachmittag', 'csrf_token': c})
+    for args in ((16, 6, 30), (16, 11, 30), (17, 16, 30)):
+        at(monkeypatch, 2026, 10, *args)
+        run(app)
+    assert [m[1] for m in mailbox] == ['Waschküche: heute Vormittag + Nachmittag (07:00 – 17:00)',
+                                       'Waschküche: heute Abend (17:00 – 22:00)']
+    assert ('Die Waschküche ist heute für euch gebucht,\nFr 16. Okt., Vormittag + Nachmittag (07:00 – 17:00 Uhr),\n'
+            'gebucht von Bob und dir.') in mailbox[0][2]
+    assert 'gebucht von Bob.' in mailbox[1][2]
+
+
+def test_booker_and_housemate_both_get_a_reminder(app, client, login, mailbox, monkeypatch):
+    household(app, 'bob', 'carol')
+    b = set_prefs(client, login, 'bob', 'bob@example.ch', 60)
+    client.post('/book', data={'day': '2026-10-15', 'slot': 'Abend', 'csrf_token': b})
+    set_prefs(client, login, 'carol', 'carol@example.ch', 60, household=True)
+    at(monkeypatch, 2026, 10, 15, 16, 5)
+    assert run(app) == (2, 0)
+    assert sorted(m[0] for m in mailbox) == ['bob@example.ch', 'carol@example.ch']
+    at(monkeypatch, 2026, 10, 15, 16, 30)
+    run(app)
+    assert len(mailbox) == 2              # not twice
+
+
+def test_household_reminder_setting(app, client, login, query):
+    t = login('bob')
+    assert 'reminder_household' not in client.get('/profile').get_data(as_text=True)  # no housemates
+    set_prefs(client, login, 'bob', '', 60, household=True)
+    assert query("SELECT reminder_household FROM users WHERE username = 'bob'") == [(0,)]
+
+    household(app, 'bob', 'carol')
+    page = client.get('/profile').get_data(as_text=True)
+    assert 'name="reminder_household"' in page and 'Auch an die Buchungen von Carol' in page
+    set_prefs(client, login, 'bob', '', 60, household=True)
+    assert query("SELECT reminder_household FROM users WHERE username = 'bob'") == [(1,)]
+    assert query("SELECT detail FROM audit_log WHERE action = 'notifications' ORDER BY id DESC LIMIT 1") == \
+        [('Erinnerung: 1 Stunde vorher (Mail, auch für den Haushalt), freie Slots: aus',)]
+
+    with app.app_context(), get_db() as con:  # alone again: the choice stays for later
+        con.execute("UPDATE users SET household_id = NULL WHERE username = 'carol'")
+    client.post('/profile', data={'action': 'notifications', 'email': '', 'reminder_minutes': '60',
+                                  'csrf_token': t})
+    assert query("SELECT reminder_household FROM users WHERE username = 'bob'") == [(1,)]
+    set_prefs(client, login, 'bob', '', 60)
+    assert query("SELECT detail FROM audit_log WHERE action = 'notifications' ORDER BY id DESC LIMIT 1") == \
+        [('Erinnerung: 1 Stunde vorher (Mail), freie Slots: aus',)]
 
 
 def test_freed_slot_notifies_subscribers(app, client, login, mailbox, monkeypatch, query):
@@ -331,7 +416,8 @@ def test_columns_are_added_to_an_existing_database(tmp_path):
     create_app({'TESTING': True, 'DATABASE': str(path)})  # idempotent
     con = sqlite3.connect(path)
     assert con.execute('SELECT username, email, reminder_minutes, notify_freed, session_version, calendar_token, '
-                       'household_id FROM users').fetchall() == [('bob', None, 0, 0, 0, None, None)]
+                       'household_id, reminder_household FROM users').fetchall() == \
+        [('bob', None, 0, 0, 0, None, None, 0)]
     assert con.execute('SELECT day, note, created_at FROM reservations').fetchall() == [('2026-10-16', None, None)]
     assert con.execute('SELECT COUNT(*) FROM households').fetchone() == (0,)
     assert con.execute("SELECT 1 FROM sqlite_master WHERE name = 'users_calendar_token'").fetchone() == (1,)

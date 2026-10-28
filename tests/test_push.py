@@ -8,7 +8,7 @@ import requests
 from conftest import MAIL_CONFIG, NOW, REAL_PUSH_DELIVER, VAPID_KEY
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from test_notifications import after_hold, at, booked_earlier, run, verify
+from test_notifications import after_hold, at, booked_earlier, household, run, verify
 
 from laundry import create_app, notifications, push, slots
 from laundry.db import get_db
@@ -34,10 +34,11 @@ def subscribe(client, token, endpoint=ENDPOINT):
 
 
 def save_prefs(client, token, minutes=0, reminder_mail=False, reminder_push=False, freed_mail=False,
-               freed_push=False, email=''):
+               freed_push=False, email='', reminder_household=False):
     data = {'action': 'notifications', 'email': email, 'reminder_minutes': str(minutes), 'csrf_token': token}
     for name, on in [('reminder_mail', reminder_mail), ('reminder_push', reminder_push),
-                     ('notify_freed', freed_mail), ('freed_push', freed_push)]:
+                     ('notify_freed', freed_mail), ('freed_push', freed_push),
+                     ('reminder_household', reminder_household)]:
         if on:
             data[name] = '1'
     return client.post('/profile', data=data)
@@ -224,6 +225,19 @@ def test_reminder_by_mail_and_push(app, client, login, mailbox, pushbox, monkeyp
     assert run(app) == (2, 0)
     assert [m[1] for m in mailbox] == ['Waschküche: heute Abend (17:00 – 22:00)']
     assert [p['title'] for _, p, _ in pushbox] == ['Erinnerung: heute Abend']
+
+
+def test_push_reminder_of_a_housemates_booking(app, client, login, pushbox, monkeypatch):
+    household(app, 'bob', 'carol')
+    t = login('bob')
+    client.post('/book', data={'day': '2026-10-15', 'slot': 'Abend', 'csrf_token': t})
+    c = login('carol')
+    save_prefs(client, c, minutes=60, reminder_push=True, reminder_household=True)
+    subscribe(client, c)
+    at(monkeypatch, 2026, 10, 15, 16, 5)
+    run(app)
+    assert [p['title'] for _, p, _ in pushbox] == ['Erinnerung: heute Abend']
+    assert pushbox[0][1]['body'].startswith('Do 15. Okt., 17:00 – 22:00 Uhr, gebucht von Bob. Kommt')
 
 
 def test_push_needs_no_email(app, client, login, mailbox, pushbox, monkeypatch):

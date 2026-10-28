@@ -151,6 +151,7 @@ email_verified INTEGER 0/1  mails only go out when 1
 reminder_minutes INTEGER 0 = off, else lead time of the reminder
 reminder_mail INTEGER 0/1  reminder by mail (default 1)
 reminder_push INTEGER 0/1  reminder by push
+reminder_household INTEGER 0/1  reminders also of housemates' bookings (default 0)
 notify_freed  INTEGER 0/1  freed slots by mail
 freed_push    INTEGER 0/1  freed slots by push
 session_version INTEGER  +1 on every password change
@@ -164,7 +165,7 @@ name  TEXT UNIQUE (case-insensitive)
 
 notifications (outbox)
 ──────────────────────
-dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>' (push: plus ':push:<subscription id>'),
+dedupe_key  TEXT UNIQUE   e.g. 'reminder:<reservation id>' (a housemate's booking: plus ':<user id>'; push: plus ':push:<subscription id>'),
                           'freed:<day>:<user id>:<mail | push:<subscription id>>:<queued at>'
 to_addr, subject, body    push: to_addr = host of the push service, body = JSON payload
 created_at, expires_at    not sent after expires_at (slot start, reset link validity)
@@ -261,7 +262,7 @@ ip        TEXT     request.remote_addr, NULL for the CLI
 | `/cancel` | POST | `bookings.cancel_many` | owner, housemate or admin | `id` (repeated), `next`; cancels a block, skips ended slots |
 | `/note` | POST | `bookings.note` | owner or housemate | `id` (repeated), `note`, `next`; sets the note of a block (empty clears it), skips ended slots; 400 without ids or above 80 characters |
 | `/help` | GET | `help.index` | user | Help page: calendar, booking, cancelling, month view, phone, households, profile |
-| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (`email`, `reminder_minutes`, checkboxes `reminder_mail`, `reminder_push`, `notify_freed`, `freed_push`; the push ones only count while push is configured; a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
+| `/profile` | GET/POST | `profile.index` | user | `action=name`, `action=notifications` (`email`, `reminder_minutes`, checkboxes `reminder_mail`, `reminder_push`, `reminder_household`, `notify_freed`, `freed_push`; the push ones only count while push is configured, `reminder_household` only while the user has housemates (shown only then); a changed address needs confirming), `action=verify_email` (send the confirmation again), `action=calendar` (create or renew the calendar link), `action=calendar_delete`, or `action=password` with `old_password`, `new_password`, `new_password2` (must match) |
 | `/admin` | GET | `admin.index` | admin | Users, households and settings |
 | `/admin/users` | POST | `admin.create` | admin | Create user |
 | `/admin/users/<id>/reset` | POST | `admin.reset_password` | admin | New random password (12 characters), shown once in the response itself (not flashed, so not in the cookie); ends the user's sessions |
@@ -313,7 +314,8 @@ All of them live in `bookings.book()` and `bookings.cancel()`; the UI only mirro
   the same `household_id` (cached on `g`). A booking by any of them counts as the user's own:
   `build_cell()` sets `ours` (state `mine`, blue, cancelable, no "Fremde Buchung" dialog) next to
   `mine` (booked by the user personally, labelled "Du"). Bookings still belong to the person who made
-  them, so reminders go to them and the cell shows their name.
+  them, so the cell shows their name; reminders go to them, and to housemates who chose
+  `reminder_household` in the profile.
 - "Now" always comes from `slots.now()`, which uses the `TIMEZONE` config. Call it as
   `slots.now()` (module attribute), never `from .slots import now`, and never
   `datetime.now()`: the tests replace `slots.now` with a fixed time.
@@ -394,7 +396,8 @@ extend `tests/test_audit.py`.
 ## Notifications (mail and push)
 
 Reminders and "a slot became free" go out by mail, by push or both; each user picks the channels per
-notification in the profile (`reminder_mail`/`reminder_push` with the lead time `reminder_minutes`,
+notification in the profile (`reminder_mail`/`reminder_push` with the lead time `reminder_minutes`, and `reminder_household` for
+reminders of housemates' bookings too,
 `notify_freed`/`freed_push`). Password reset and address confirmation are mail only.
 
 All of it goes through the `notifications` table (outbox pattern):
@@ -453,7 +456,8 @@ the account. Addresses that existed before the column was added count as confirm
 `init_db()`).
 
 Rules: reminders go out within `reminder_minutes` before the slot start; back-to-back slots of the
-same user on one day are one block with one reminder before its first slot; freed slots are
+same user (with `reminder_household`: of the user's household) on one day are one block with one reminder
+before its first slot; a reminder that includes housemates' bookings says who booked them; freed slots are
 announced only for slots starting within 7 days (`FREED_WINDOW`), not to the person who cancelled,
 not when the booking was younger than 10 minutes (`FREED_MIN_BOOKED`), and not when the slot is booked
 again before the message goes out.

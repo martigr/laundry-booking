@@ -140,7 +140,8 @@
     <h2>Haushalt</h2>
     <p>Wohnt ihr zu mehreren in einer Wohnung und jede Person hat ein eigenes Login, kann ein Admin euch zu einem
       Haushalt zusammenfassen. Dann sind die Buchungen deiner Mitbewohner auch für dich blau (mit ihrem Namen),
-      erscheinen in «Eure nächsten Buchungen» und du kannst sie stornieren.</p>
+      erscheinen in «Eure nächsten Buchungen» und du kannst sie stornieren.{% if mail_enabled or push_enabled %} Im Profil kannst du wählen, ob du auch an
+      ihre Buchungen erinnert werden willst.{% endif %}</p>
   </section>
 
   {% if mail_enabled or push_enabled %}
