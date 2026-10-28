@@ -251,48 +251,68 @@ def drop_rebooked_freed(con):
 def queue_due_reminders(con):
     """Queue reminders for bookings that start within each user's chosen lead time.
 
-    Back-to-back slots of the same user on one day (e.g. a whole day) are one block: one reminder
-    (per channel) before the block starts, none for the slots that only continue it.
+    A user is reminded of their own bookings and, with `reminder_household`, of their housemates' too.
+    Back-to-back slots of these on one day (e.g. a whole day) are one block: one reminder (per channel)
+    before the block starts, none for the slots that only continue it.
     """
     now = slots.now()
     longest = max(m for m, _ in REMINDER_CHOICES)
-    rows = con.execute("""
-        SELECT r.id, r.day, r.slot, u.id AS user_id, u.display_name, u.email, u.email_verified,
-               u.reminder_minutes, u.reminder_mail, u.reminder_push
+    bookings = con.execute("""
+        SELECT r.id, r.day, r.slot, r.user_id, u.display_name, u.household_id
         FROM reservations r JOIN users u ON u.id = r.user_id
-        WHERE u.reminder_minutes > 0 AND (u.reminder_mail = 1 OR u.reminder_push = 1)
-          AND r.day BETWEEN ? AND ?
+        WHERE r.day BETWEEN ? AND ?
     """, (now.date().isoformat(), (now + timedelta(minutes=longest)).date().isoformat())).fetchall()
-    # The query has all of a user's bookings on these days, so a block's neighbours are in here
-    owner = {(r['day'], r['slot']): r['user_id'] for r in rows}
-    for r in rows:
-        day = parse_day(r['day'])
-        start = slot_bounds(day, r['slot'])[0]
-        if owner.get((r['day'], _previous_slot(day, r['slot']))) == r['user_id']:
-            continue  # continues a block, whose first slot gets the reminder
-        if not start - timedelta(minutes=r['reminder_minutes']) <= now < start:
-            continue
-        block = [r['slot']]
-        while owner.get((r['day'], _next_slot(day, block[-1]))) == r['user_id']:
-            block.append(_next_slot(day, block[-1]))
-        names = ' + '.join(block)
-        hours = f'{slot_time(block[0]).split(" – ")[0]} – {slot_time(block[-1]).split(" – ")[1]}'
-        when = _when(day, now)
-        url = link('/?week=' + day.isoformat())
-        if _mail_to(r, 'reminder_mail'):
-            body = (f'Hallo {r["display_name"]}\n\n'
-                    f'Erinnerung: Du hast die Waschküche {when} gebucht,\n'
-                    f'{fmt_day(day)}, {names} ({hours} Uhr).\n\n'
-                    f'Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können:\n'
-                    f'{url}\n'
-                    + _footer(r['user_id'], 'reminder', 'Erinnerungen'))
-            _queue(con, f'reminder:{r["id"]}', r['email'],
-                   f'Waschküche: {when} {names} ({hours})', body, expires_at=start)
-        if _push_to(r, 'reminder_push'):
-            _queue_push(con, f'reminder:{r["id"]}', r['user_id'], f'Erinnerung: {when} {names}',
-                        f'{fmt_day(day)}, {hours} Uhr. Kommt etwas dazwischen? '
-                        f'Storniere den Slot, damit andere ihn nutzen können.',
-                        url, f'reminder:{r["id"]}', start)
+    if not bookings:
+        return
+    users = con.execute("""
+        SELECT id, display_name, email, email_verified, household_id, reminder_minutes, reminder_mail,
+               reminder_push, reminder_household
+        FROM users WHERE reminder_minutes > 0 AND (reminder_mail = 1 OR reminder_push = 1)
+    """).fetchall()
+    for u in users:
+        household = u['household_id'] if u['reminder_household'] else None
+        # All of the user's bookings on these days are in here, so a block's neighbours are too
+        ours = {(b['day'], b['slot']): b for b in bookings
+                if b['user_id'] == u['id'] or (household is not None and b['household_id'] == household)}
+        for (day, slot), b in ours.items():
+            day = parse_day(day)
+            start = slot_bounds(day, slot)[0]
+            if (b['day'], _previous_slot(day, slot)) in ours:
+                continue  # continues a block, whose first slot gets the reminder
+            if not start - timedelta(minutes=u['reminder_minutes']) <= now < start:
+                continue
+            block = [b]
+            while (key := (b['day'], _next_slot(day, block[-1]['slot']))) in ours:
+                block.append(ours[key])
+            _queue_reminder(con, u, day, block, start)
+
+
+def _queue_reminder(con, user, day, block, start):
+    """One reminder (mail and/or push) of a block of bookings to `user`; some may be housemates'."""
+    # A reminder of one's own booking keeps the key it had before housemates' bookings were reminded of
+    first = block[0]
+    key = f'reminder:{first["id"]}' + ('' if first['user_id'] == user['id'] else f':{user["id"]}')
+    names = ' + '.join(b['slot'] for b in block)
+    hours = f'{slot_time(block[0]["slot"]).split(" – ")[0]} – {slot_time(block[-1]["slot"]).split(" – ")[1]}'
+    when = _when(day, slots.now())
+    url = link('/?week=' + day.isoformat())
+    by = list(dict.fromkeys('dir' if b['user_id'] == user['id'] else b['display_name'] for b in block))
+    by = None if by == ['dir'] else (by[0] if len(by) == 1 else ', '.join(by[:-1]) + ' und ' + by[-1])
+    if _mail_to(user, 'reminder_mail'):
+        booked = (f'Du hast die Waschküche {when} gebucht,\n{fmt_day(day)}, {names} ({hours} Uhr).' if by is None
+                  else f'Die Waschküche ist {when} für euch gebucht,\n{fmt_day(day)}, {names} ({hours} Uhr),\n'
+                       f'gebucht von {by}.')
+        body = (f'Hallo {user["display_name"]}\n\n'
+                f'Erinnerung: {booked}\n\n'
+                f'Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können:\n'
+                f'{url}\n'
+                + _footer(user['id'], 'reminder', 'Erinnerungen'))
+        _queue(con, key, user['email'], f'Waschküche: {when} {names} ({hours})', body, expires_at=start)
+    if _push_to(user, 'reminder_push'):
+        _queue_push(con, key, user['id'], f'Erinnerung: {when} {names}',
+                    f'{fmt_day(day)}, {hours} Uhr' + (f', gebucht von {by}' if by else '')
+                    + '. Kommt etwas dazwischen? Storniere den Slot, damit andere ihn nutzen können.',
+                    url, key, start)
 
 
 def _previous_slot(day, slot_name):

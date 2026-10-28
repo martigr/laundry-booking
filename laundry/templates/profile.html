@@ -56,6 +56,9 @@
         <label class="check"><input type="checkbox" name="reminder_mail" value="1"{{ ' checked' if g.user['reminder_mail'] }}>per Mail</label>
         {% if push_enabled %}<label class="check"><input type="checkbox" name="reminder_push" value="1"{{ ' checked' if g.user['reminder_push'] }}>per Push</label>{% endif %}
       </div>
+      {% if housemates %}
+      <label class="check"><input type="checkbox" name="reminder_household" value="1"{{ ' checked' if g.user['reminder_household'] }}>Auch an die Buchungen von {{ housemates|join(', ') }}</label>
+      {% endif %}
     </div>
     <fieldset class="field">
       <legend class="field-label">Wenn in den nächsten 7 Tagen ein Slot frei wird</legend>
